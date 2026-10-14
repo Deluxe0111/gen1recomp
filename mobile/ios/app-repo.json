@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.88",
+          "date": "2026-10-14",
+          "size": 56337448,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.88/gen1recomp++-0.3.88-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2828 Cannot import FireRed, Sapphire and Emerald on sbc-portmaster version\n- #2916 RG35xxsp\n\n## Contributors\n\n- @AverageConsumer\n- @bryanthaboi\n- @Nexhas28"
+        },
+        {
           "version": "0.3.87",
           "date": "2026-10-14",
           "size": 56337258,
