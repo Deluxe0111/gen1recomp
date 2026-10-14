@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.87",
+          "date": "2026-10-14",
+          "size": 56337258,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.87/gen1recomp++-0.3.87-ios.ipa",
+          "localizedDescription": "+++ goober boulder bug patched out\n\n## Issues closed\n\n- #2982 Improve Fractional Scaling Support in Windows\n- #2983 Pacifidlog Town log bridges not reacting to player (Ruby and Sapphire)\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.86",
           "date": "2026-10-14",
           "size": 56341503,
