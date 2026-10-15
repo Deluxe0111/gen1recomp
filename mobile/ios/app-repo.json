@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.89",
+          "date": "2026-10-15",
+          "size": 56348310,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.89/gen1recomp++-0.3.89-ios.ipa",
+          "localizedDescription": "Crystal Enhancements mainly but several that affect GS as well.\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.88",
           "date": "2026-10-14",
           "size": 56337448,
