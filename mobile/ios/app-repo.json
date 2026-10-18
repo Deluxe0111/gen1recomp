@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.90",
+          "date": "2026-10-18",
+          "size": 44590913,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.90/gen1recomp++-0.3.90-ios.ipa",
+          "localizedDescription": "Bazinga time\n\n## Issues closed\n\n- #2989 (Saphire) Crash when fishing\n- #2991 problem with map transitions\n- #2992 no typewriting effect on quit confirmation dialog\n- #2994 (Gen 3) Funky graphics on chat system with most of the screen turning black\n- #2997 Inconsistent display scaling between generations\n- #2998 Music stutters on intro\n- #2999 (Firered) Status effect labels\n- #3000 (Firered) Bug when paralyzed and digging\n- #3002 (Firered) Cycling music resets after battle\n- #3003 (Firered) Forced switching EXP bar display glitch\n- #3004 Launcher issue - mods\n- #3005 Using the save editor Fix all errors feature removes the pokemon name\n- #3006 Not saving in the Frontier Pass in Pokémon Emerald's Battle Frontier\n- #3009 Script waitbuttonpress wait survives a VM halt on map change, leaving the player unable to move\n- #3010 Exclude *.psd from build\n- #3012 Gen2: a side-effect status says \"But it failed!\" when the target already has one\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.89",
           "date": "2026-10-15",
           "size": 56348310,
