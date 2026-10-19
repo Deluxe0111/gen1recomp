@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.91",
+          "date": "2026-10-19",
+          "size": 44586417,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.91/gen1recomp++-0.3.91-ios.ipa",
+          "localizedDescription": "Ui fix specifically for ui mods \n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.90",
           "date": "2026-10-18",
           "size": 44590913,
