@@ -757,9 +757,8 @@ COVERAGE["src.world.WorldAPI"] = {
   notes = {
     overworld = "Gold's World is not a stack state, so nothing can hide it; "
       .. "the returned object is a World, not an OverworldState",
-    warpTo = "opts is accepted for parity and nothing in it is read: no "
-      .. "arrive FX, no onDone, no keepMusic -- a mod chaining off onDone "
-      .. "stops with no error",
+    warpTo = "forwards onDone, keepMusic and arrive to World:warpToMapId; "
+      .. "onDone runs at transition end before optional arrival FX finish",
     toggleObject = "visibility IS the MAPOBJECT_EVENT_FLAG, so an off-map "
       .. "toggle is refused where Gen 1 accepts it",
     setFlag = "Gen 2 event flags are NUMERIC indices into wEventFlags; a "
@@ -946,17 +945,15 @@ local function buildOverworld()
     return world and world:takeWarp(warpDef) or nil
   end
 
-  function ow.startWarpTo(mapId, x, y, facing, onDone, _opts)
+  function ow.startWarpTo(mapId, x, y, facing, onDone, opts)
     local world = w("startWarpTo")
     if not world then return nil end
-    if onDone then
-      warnOnce("ow.startWarpTo.onDone",
-        "[%s] OverworldState.startWarpTo drops onDone on Gold "
-        .. "(World:warpToMapId has no completion callback); a mod chaining "
-        .. "off it stalls", who(OW))
-    end
+    local warpOpts = (onDone or opts) and {
+      onDone = onDone, keepMusic = opts and opts.keepMusic,
+      arrive = opts and opts.arrive,
+    } or nil
     return world:warpToMapId(mapId, x, y,
-      facing or (world.player and world.player.facing))
+      facing or (world.player and world.player.facing), warpOpts)
   end
 
   function ow.canCollisionWarp()
@@ -1438,6 +1435,9 @@ COVERAGE[OW] = {
       .. "the World as self and can call through",
     talkTo = "seamed into World:interactBody once the object is resolved; a "
       .. "true return suppresses the built-in path",
+    startWarpTo = "World:warpToMapId with native map setup fade; forwards "
+      .. "onDone, keepMusic and arrive; onDone runs at transition end before "
+      .. "optional arrival FX finish",
     npcAtCell = "Gold does NOT match targetX/targetY, so an NPC walking INTO "
       .. "the cell is missed; it DOES match all four cells of a BIG_OBJECT",
     player = "the LIVE World's field, read and written through: it is a "
@@ -1657,11 +1657,11 @@ end
 COVERAGE["src.ui.PartyMenu"] = {
   kind = "facade", target = "src.ui.gen2.PartyMenu",
   backed = "new close bottomMessage entryY update draw isOpaque __index "
-    .. "PROMPTS index party submenu switchFrom clock onCancel",
+    .. "PROMPTS index party submenu switchFrom clock onCancel onSwitch "
+    .. "pickOnly itemUse forceSwitch",
   warned = "keepOpen tmhm",
   absent = "drawIcon frameFor mirrorsIcon iconFrames sgbPalettes animateTo "
-    .. "heal softboiledFrom battle subItems subIndex swapFrom blink onSwitch "
-    .. "pickOnly itemUse forceSwitch",
+    .. "heal softboiledFrom battle subItems subIndex swapFrom blink",
   notes = {
     new = "onSwitch(mon, menu) is wrapped onto onChoose(index, mon); opts."
       .. "battle carries only its BOOLEAN sense and self.battle is left nil "

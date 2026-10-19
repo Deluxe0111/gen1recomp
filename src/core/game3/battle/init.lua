@@ -64,6 +64,66 @@ local function LB_copy(value, depth)
   return out
 end
 
+local function menu_auxiliary_safe(game)
+  local st = Battle._st
+  if not game or not Battle._active or not st or Battle._phase ~= "command"
+      or Battle._auto or Battle._headless or st.over or st._modTurnOpen
+      or st.link or st.spectate or st.safari or st.ghostBattle or st.pokedude
+      or st.oldManTutorial or st.firstBattle or st.facility
+      or st.trainerTower or st.battleTower or st.eReader or st.secretBase
+      or Kinds.has(st, "tutorial") or Kinds.has(st, "recordedLink")
+      or Kinds.has(st, "frontier") or Kinds.has(st, "pyramid") or Kinds.has(st, "pike")
+      or Battle._pendingEnd or Battle._pendingChoice or Battle._midTurn
+      or Ui._st ~= st or Ui._mode ~= "menu" or Ui._pendingCommand
+      or Ui._target or Ui._selCmd or Ui.yesNoPending() or Ui.busy()
+      or Anim.busy() or Anim.seqBusy() or AnimSeq.busy() or IntroSeq.busy()
+      or SwitchSeq.busy() or CatchSeq.busy() or ExpSeq.busy() or EvoSeq.busy()
+      or Fade.isActive() then return false end
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  if Runtime and (not Runtime.active or Runtime._game ~= game
+      or Runtime.getSession() ~= st.session) then return false end
+  local Stack = package.loaded["src.ui.game3.stack"]
+  local Hud = package.loaded["src.ui.game3.hud"]
+  if (Stack and Stack.busy()) or (Hud and Hud.isMenuOpen()) then return false end
+  local stack = game.stack
+  if stack and stack.top then
+    local top = stack:top()
+    if top and top ~= game.overworld then return false end
+  end
+  local sel = Battle._dblSel
+  if st.double and (not sel or sel.targeting or next(sel.chosen) ~= nil
+      or sel.active ~= Ui._active) then return false end
+  local id = st.double and sel.active or 0
+  local player = State.battler(st, id)
+  if not player or State.isAbsent(st, id) or Kinds.controllerOf(st, id) ~= "player"
+      or player.expLockedMove or player.expMustRecharge then return false end
+  for battlerId = 0, (st.double and 3 or 1) do
+    if not State.isAbsent(st, battlerId) then
+      local b = State.battler(st, battlerId)
+      local mon = b and b.mon
+      local pres = Anim.present(battlerId)
+      if not mon or (tonumber(mon.hp) or 0) <= 0 or not pres
+          or Anim.shownBattler(battlerId, b) ~= b
+          or pres.displayHp ~= mon.hp or pres.displayMaxHp ~= mon.maxHp
+          or pres.displayStatus ~= (b.status or mon.status or mon.status1) then
+        return false
+      end
+    end
+  end
+  return true
+end
+
+local function menu_auxiliary(input, game)
+  if not input or not ModRuntime.wantsHook("battle.menu_auxiliary")
+      or not input:wasPressed("start") or not menu_auxiliary_safe(game) then return false end
+  local st = Battle._st
+  local session = st.session
+  local claimed = ModRuntime.call("battle.menu_auxiliary", function() return false end,
+    game, { kind = st.wild and "wild" or "trainer" })
+  return claimed == true or Battle._st ~= st or st.session ~= session
+    or not menu_auxiliary_safe(game)
+end
+
 -- Phases in which the level-up stat window can still be dismissed by the
 -- player.  Input routing and drawing both key off this, so the window can never
 -- linger somewhere it can no longer be dismissed (#2324).
@@ -1918,6 +1978,49 @@ local function push_awards_headless(awards)
   end
 end
 
+local function award_catch_exp(catchRes, onDone)
+  local st = Battle._st
+  if st and st._catchExpPending then return true end
+  if not st or st._catchExpHandled or not catchRes or not catchRes.success
+      or not st.enemy or st.oldManTutorial or st.pokedude or st.link
+      or Kinds.has(st, "tutorial") or Kinds.noExp(st)
+      or not ModRuntime.wantsHook("battle.catch_exp") then return false end
+  st._catchExpHandled = true
+  st._catchExpPending = true
+  local enabled = ModRuntime.call("battle.catch_exp", function() return false end, { battle = st })
+  if not Battle._active or Battle._st ~= st then
+    st._catchExpPending = nil
+    return true
+  end
+  if not enabled then
+    st._catchExpPending = nil
+    return false
+  end
+  local awards = Experience.awardFoe(st, st.enemy, { trainer = not st.wild })
+  if not Battle._active or Battle._st ~= st then
+    st._catchExpPending = nil
+    return true
+  end
+  if Battle._headless or Ui._headless then
+    Battle._leveledUp = Battle._leveledUp or {}
+    push_awards_headless(awards)
+    st._catchExpPending = nil
+    return false
+  end
+  local hooks = choice_hooks()
+  hooks.double = st.double
+  if not ExpSeq.begin(awards, hooks.pushMsg, nil, hooks) then
+    st._catchExpPending = nil
+    return false
+  end
+  Battle._onExpDone = function()
+    st._catchExpPending = nil
+    if Battle._active and Battle._st == st and onDone then onDone() end
+  end
+  Battle._phase = "awarding"
+  return true
+end
+
 local function handle_enemy_faint(opts)
   opts = opts or {}
   local st = Battle._st
@@ -2193,6 +2296,7 @@ local function step_safari_ball()
     Battle._pendingEnd = "catch"
     if headless then
       Battle._phase = "ending"
+      award_catch_exp(CatchSeq.catchResult())
     else
       Battle._phase = "catching"
     end
@@ -2480,6 +2584,7 @@ local function step_action()
             st.result = "catch"
             Battle._pendingEnd = "catch"
             Battle._phase = "ending"
+            award_catch_exp(CatchSeq.catchResult())
             return
           end
         else
@@ -3607,6 +3712,7 @@ local function finish_catch_flow(catchRes, ename, nicknamed)
 end
 
 local function start_post_catch_flow(catchRes)
+  if award_catch_exp(catchRes, function() start_post_catch_flow(catchRes) end) then return end
   Ui.clearCaughtDexScene()
   Battle._catchDexReturn = nil
   -- pokefirered/data/battle_scripts_2.s:99 BattleScript_OldMan_Pokedude_CaughtMessage
@@ -3859,6 +3965,8 @@ update_body = function(dt, game)
     spectate_turn_step()
     return
   end
+
+  if menu_auxiliary(input, game) then return end
 
   if Battle._phase == "command" and not Battle._auto and Battle._st and Battle._st.double then
     D.commandUpdate(input)

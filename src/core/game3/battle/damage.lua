@@ -217,8 +217,8 @@ function Damage.base(attacker, defender, move, opts)
   end
   local HeldItems = require("src.core.game3.battle.held_items")
   local HOLD = HeldItems.HOLD
-  local aHe, aParam = HeldItems.of(attacker)
-  local dHe = HeldItems.of(defender)
+  local aHe, aParam = HeldItems.of(attacker, "damage", opts.st or st)
+  local dHe = HeldItems.of(defender, "damage", opts.st or st)
   if HeldItems.TYPE_BOOST[aHe] == moveType then
     if Types.isPhysical(moveType) then
       attack = math.floor(attack * (aParam + 100) / 100)
@@ -521,6 +521,7 @@ function Damage.calc(attacker, defender, moveId, opts)
     moveType = moveType,
     crit = crit,
     adapter = opts.adapter,
+    st = opts.st,
     reflect = opts.reflect,
     lightScreen = opts.lightScreen,
     doubleScreens = opts.doubleScreens,

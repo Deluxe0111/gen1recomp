@@ -10,6 +10,8 @@ local BattleChrome = require("src.ui.game3.battle_chrome")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local State = require("src.core.game3.battle.state")
 local RomText = require("src.core.game3.rom_text")
+local ModRuntime = require("src.mods.Runtime")
+local LevelDisplay = require("src.ui.LevelDisplay")
 
 local Healthbox = {}
 
@@ -282,7 +284,20 @@ local function draw_name_gender(name, gender, x, y)
 end
 
 -- pokefirered/src/battle_interface.c:759
-local function draw_level(lv, boxX, y, winX)
+local function draw_level(lv, boxX, y, winX, mon, side, st)
+  if ModRuntime.wantsHook("pokemon.level_visible") then
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = (st and st.session) or (Runtime and Runtime.getSession and Runtime.getSession())
+    local game = (session and session.game) or (Runtime and Runtime._game)
+    if not LevelDisplay.visible(mon, "battle." .. side, game) then
+      if rs_layout() then
+        love.graphics.setColor(rs_text_colors().bg)
+        love.graphics.rectangle("fill", boxX + winX, y - TEXT_Y + 8, 24, 8)
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+      return
+    end
+  end
   local digits = tostring(math.max(0, math.min(999, math.floor(tonumber(lv) or 1))))
   if rs_layout() then
     -- pokeruby/src/battle_interface.c:783
@@ -525,7 +540,8 @@ local function draw_doubles(id, battler, st, opts)
   local gender = healthbox_gender(battler.mon)
   -- pokefirered/src/battle_interface.c:1531
   draw_name_gender(name, gender, tlX + (isPlayer and 16 or 8), ty)
-  draw_level(lv, tlX, ty, isPlayer and PLAYER_LVL_X or ENEMY_LVL_X)
+  draw_level(lv, tlX, ty, isPlayer and PLAYER_LVL_X or ENEMY_LVL_X,
+    battler.mon, isPlayer and "player" or "enemy", st)
   if statused then
     -- pokefirered/src/battle_interface.c:1608
     if rs_layout() then
@@ -653,7 +669,7 @@ function Healthbox.draw(side, battler, opts)
 
   if isPlayer then
     draw_name_gender(name, gender, tlX + 16, ty)
-    draw_level(lv, tlX, ty, lvlX)
+    draw_level(lv, tlX, ty, lvlX, battler.mon, side, bst)
     if ailment >= 1 and ailment <= 6 then
       -- pokefirered/src/battle_interface.c:1608
       if rs_layout() then
@@ -682,7 +698,7 @@ function Healthbox.draw(side, battler, opts)
     BattleChrome.drawExpBar(tlX + 32, tlY + 32, expRatio)
   else
     draw_name_gender(name, gender, tlX + 8, ty)
-    draw_level(lv, tlX, ty, lvlX)
+    draw_level(lv, tlX, ty, lvlX, battler.mon, side, bst)
     if ailment >= 1 and ailment <= 6 then
       -- pokefirered/src/battle_interface.c:1614
       if rs_layout() then
@@ -693,15 +709,7 @@ function Healthbox.draw(side, battler, opts)
       end
     else
       -- pokefirered/src/battle_interface.c:1658
-      local species = battler.species or (battler.mon and (battler.mon.species or battler.mon.speciesId))
-      local latch = battler._caughtIcon
-      if not latch or latch.mon ~= battler.mon or latch.species ~= species or latch.ailment ~= ailment
-          or latch.name ~= name then
-        latch = { mon = battler.mon, species = species, ailment = ailment, name = name,
-          show = Healthbox.shouldShowCaughtMarker(bst, battler) }
-        battler._caughtIcon = latch
-      end
-      if latch.show then
+      if Healthbox.shouldShowCaughtMarker(bst, battler) then
         BattleChrome.drawPartyBall(tlX + 8, tlY + 16, "caught")
       end
     end
@@ -759,7 +767,10 @@ function Healthbox.shouldShowCaughtMarker(st, battler)
   if not dex then return false end
 
   local Dex = require("src.core.game3.dex")
-  return Dex.isCaught(dex, species) == true
+  if Dex.isCaught(dex, species) ~= true then return false end
+  if not ModRuntime.wantsHook("battle.caught_marker_visible") then return true end
+  return ModRuntime.call("battle.caught_marker_visible", function() return true end,
+    st or live_st()) == true
 end
 
 function Healthbox.syncOam(_st)

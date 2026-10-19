@@ -90,7 +90,7 @@ end
 -- package.loaded.io and undo the whole mod environment -- so it is installed
 -- in player builds too, for any boot that has mods on it.
 
-local devShim = { installed = false, permissions = {}, warned = {}, depth = 0,
+local devShim = { installed = false, permissions = {}, apis = {}, warned = {}, depth = 0,
   -- fast path for already-loaded, undeniable modules (see fastEligible);
   -- `fast` is the test seam that forces every require down the slow path
   fast = true, memo = {}, onFastHit = nil }
@@ -154,10 +154,10 @@ local COMPAT = {
   [3] = { module = Gen3Compat, file = "src/mods/Gen3Compat.lua", tag = "gen3" },
 }
 
-local function compatFor(generation, version)
+local function compatFor(generation, version, modId)
   local compat = COMPAT[generation]
   if compat and type(compat.module.appliesTo) == "function"
-      and not compat.module.appliesTo(version) then
+      and not compat.module.appliesTo(version, devShim.apis[modId]) then
     return nil
   end
   return compat
@@ -207,7 +207,7 @@ local function scanRequire(name)
   -- A Gen 1-only module on a Gold boot is not a permissions question, it is a
   -- dead patch: reported once, attributed, and onto the boot error feed the
   -- manager shows the player rather than a dev-only log line.
-  local compat = compatFor(devShim.generation, devShim.version)
+  local compat = compatFor(devShim.generation, devShim.version, modId)
   if devShim.generation ~= 1 and GEN1_ONLY_MODULES[name]
       and not (compat and compat.module.serves(name)) then
     local key = modId .. "|" .. (compat and compat.tag or "gen?") .. "|" .. name
@@ -300,12 +300,17 @@ function Loader.endSession()
   devShim.generation = nil
   devShim.version = nil
   devShim.errors = nil
+  devShim.permissions = {}
+  devShim.apis = {}
   resetFastMemo()
 end
 
 function Loader:_installDevShim()
+  devShim.permissions = {}
+  devShim.apis = {}
   for id, mod in pairs(self.mods) do
     devShim.permissions[id] = mod.manifest.permissionSet
+    devShim.apis[id] = mod.manifest.api or 1
   end
   devShim.dev = self.dev
   resetFastMemo()
@@ -344,8 +349,8 @@ function Loader:_installDevShim()
       -- doing it is the hole this closes, and any future path that runs mod
       -- code without a sandbox env still lands here.
       local owner = Runtime.currentMod or Runtime.modRequire
+      local id = type(owner) == "string" and owner or nil
       if owner then
-        local id = type(owner) == "string" and owner or nil
         local denial = Sandbox.moduleDenial(name, devShim.permissions[id])
           or (id and crossGenerationDenial(name, devShim.generation))
         if denial then error(("[%s] %s"):format(id or "mod", denial), 0) end
@@ -357,10 +362,10 @@ function Loader:_installDevShim()
       -- The Gen 1 name a mod asked for, answered by this generation's compat arm.
       -- Engine code keeps the real module: src/render/PaletteFX.lua:776
       -- requires src.core.Game on both generations and means it.
-      local compat = compatFor(devShim.generation, devShim.version)
+      local compat = compatFor(devShim.generation, devShim.version, id)
       if compat and compat.module.serves(name)
           and (owner or callerIsMod(3)) then
-        local adapter = compat.module.resolve(name, Runtime.currentMod)
+        local adapter = compat.module.resolve(name, id)
         if adapter then
           local key = "adapter|" .. compat.tag .. "|" .. name
           if not devShim.warned[key] then
@@ -1731,6 +1736,73 @@ function Loader:_api(mod)
     api.content[alias] = self:_contentApi(mod, self.content[canonical],
       ("the %s registry is deprecated; use %s"):format(alias, canonical))
   end
+  if (mod.manifest.api or 1) >= 3 then
+    local UnifiedContent = assert(engineRequire("src.mods.UnifiedContent"),
+      "API 3 content service unavailable")
+    local UnifiedCallbacks = assert(engineRequire("src.mods.UnifiedCallbacks"),
+      "API 3 callback service unavailable")
+    local UnifiedWorld = assert(engineRequire("src.mods.UnifiedWorld"),
+      "API 3 world service unavailable")
+    local UnifiedBattle = assert(engineRequire("src.mods.UnifiedBattle"),
+      "API 3 battle service unavailable")
+    api.content = UnifiedContent.new(loader, mod, api.content)
+    local openDataset = api.datasets.open
+    local function trustedDataset(fn, ...)
+      local function pack(...) return { n = select("#", ...), ... } end
+      devShim.depth = devShim.depth + 1
+      local result = pack(pcall(fn, ...))
+      devShim.depth = devShim.depth - 1
+      if not result[1] then error(result[2], 0) end
+      return (table.unpack or unpack)(result, 2, result.n)
+    end
+    api.datasets.open = function(_, version)
+      local view, reason = trustedDataset(openDataset, nil, version)
+      if not view then return nil, reason end
+      -- Dataset reads hydrate trusted engine defaults lazily. Scope each call,
+      -- including iterators, without running any mod callback at shim depth.
+      local content = {}
+      for name, handle in pairs(view.content) do
+        local native = handle
+        content[name] = {
+          get = function(_, id) return trustedDataset(native.get, native, id) end,
+          has = function(_, id) return trustedDataset(native.has, native, id) end,
+          each = function()
+            local iter = trustedDataset(native.each, native)
+            return function() return trustedDataset(iter) end
+          end,
+        }
+      end
+      local context = { generation = view.generation, version = view.version }
+      local assets = {}
+      for name, method in pairs(view.assets) do
+        local fn = method
+        assets[name] = function(_, ...) return trustedDataset(fn, view.assets, ...) end
+      end
+      return {
+        generation = view.generation,
+        version = view.version,
+        content = UnifiedContent.new(context, mod, content),
+        assets = assets,
+      }, reason
+    end
+    local callbacks = UnifiedCallbacks.new(loader, modId)
+    api.events, api.hooks = callbacks.events, callbacks.hooks
+    local function gameProvider() return loader:_game() end
+    api.world = UnifiedWorld.new(gameProvider, loader.generation, loader.version,
+      modId, engineRequire)
+    api.battle = UnifiedBattle.new(gameProvider, loader.generation, loader.version,
+      engineRequire)
+    function api:supports(surface, name)
+      if surface == "content" then
+        return UnifiedContent.supports(name, loader.generation, loader.version)
+      elseif surface == "world" then
+        return UnifiedWorld.supports(name, loader.generation, loader.version)
+      elseif surface == "hooks" or surface == "events" then
+        return UnifiedCallbacks.supports(surface, name, loader.generation, loader.version)
+      end
+      return false, "unsupported surface: " .. tostring(surface)
+    end
+  end
   -- A relative path inside this mod, or the mod root when relative is
   -- omitted.  Empty is the one listing case SafePath.safe rejects on
   -- purpose (it is not a file), so it is special-cased here.
@@ -2147,6 +2219,7 @@ function Loader:load(data, opts)
   -- home, creating the Data namespace when the base modules never shipped
   -- one.  A registry nobody wrote to -- engine included -- is skipped, so
   -- the namespaces that appear are exactly the ones with content behind them.
+  if self.generation == 3 then Schemas.gen3View.preindex(self.content) end
   for _, name in ipairs(self:_mergeOrder()) do
     local registry = self.content[name]
     local spec = registry.spec

@@ -1406,6 +1406,9 @@ function OverworldState:updateParallel()
 end
 
 function OverworldState:update(dt)
+  if self._modScriptLock then
+    self._modScriptLock:isRunning()
+  end
   self.battleOamKeep = nil
   self.wipeSpritesFn = nil
   -- deferred cutscene launch (see queueScript): run a queued script only
@@ -1663,6 +1666,7 @@ function OverworldState:update(dt)
   -- escort then walks an extra tile before PlayerEntryMovementRLE, and
   -- the player lands on desk Oak.
   local scripted = self.runner:isRunning() or #self.scriptMoves > 0
+                   or self._modScriptLock
                    or (self.hopLand or 0) > 0
                    or self.engaging or self.emote or self.teleportOut
                    or self.flyAnim or self.flyArrive or self.spinArrive
@@ -1676,6 +1680,7 @@ function OverworldState:update(dt)
     -- direction handling (JoypadOverworld runs the map script first) --
     -- the player can never start another step after being spotted.
     scripted = self.runner:isRunning() or #self.scriptMoves > 0
+               or self._modScriptLock
                or (self.hopLand or 0) > 0
                or self.engaging or self.emote or self.teleportOut
                or self.flyAnim or self.flyArrive or self.spinArrive
@@ -4802,6 +4807,7 @@ function OverworldState:onStepComplete()
   local runner = self.runner
   local scripted = (runner and runner.isRunning and runner:isRunning())
     or #(self.scriptMoves or {}) > 0
+    or self._modScriptLock
     or self.engaging or self.emote or self.teleportOut
   local suppressWildEncounter = grace > 0 or scripted and true or false
   self.todSteps = (self.todSteps or 0) + 1

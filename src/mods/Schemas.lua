@@ -1002,7 +1002,7 @@ end
 local function toId(index, num)
   num = tonumber(num)
   if not num or num == 0 then return nil end
-  return index.id[num] or tostring(num)
+  return index.id[num] or (index.removed and index.removed[num]) or tostring(num)
 end
 
 local function monTables(base)
@@ -1254,6 +1254,152 @@ local function ensureSlot(t, key)
   return t[key]
 end
 
+local function prepareNativeWrite(index, registry, tables, reserved)
+  local ids, values, slots, occupied = {}, {}, {}, {}
+  for _, rows in pairs(tables) do
+    for num in pairs(rows) do
+      if type(num) == "number" then occupied[num] = true end
+    end
+  end
+  for num in pairs(index.id) do occupied[num] = true end
+  for id in pairs(registry.ops) do ids[#ids + 1] = id end
+  table.sort(ids)
+  -- Fold every value before changing a backing row or any name index.
+  for _, id in ipairs(ids) do
+    local value = registry:get(id)
+    values[id] = value
+    local num = index.num[id]
+    if value ~= nil then
+      assert(type(value) == "table", registry.name .. ": expected native record")
+      assert(value.index == nil or num == nil or value.index == num,
+        registry.name .. ": changing a native index is unsupported")
+      if not num and value.index ~= nil then
+        num = value.index
+        assert(type(num) == "number" and num % 1 == 0 and num >= 1 and num <= 1023
+          and not (reserved and reserved[num]), registry.name .. ": invalid or reserved native index")
+        assert(not occupied[num], registry.name .. ": native index collision: " .. num)
+        assert(index ~= EMPTY_INDEX, registry.name .. ": native name table unavailable")
+        occupied[num] = true
+      end
+    end
+    slots[id] = num
+  end
+  -- Reserve explicit slots first, then allocate around them.
+  for _, id in ipairs(ids) do
+    if values[id] ~= nil and slots[id] == nil then
+      for num = 1, 1023 do
+        if not occupied[num] and not (reserved and reserved[num]) then
+          slots[id], occupied[num] = num, true
+          break
+        end
+      end
+      assert(slots[id], registry.name .. ": no unused native index")
+      assert(index ~= EMPTY_INDEX, registry.name .. ": native name table unavailable")
+    end
+  end
+  -- All new ids must resolve before any record (including evolutions) is written.
+  for _, id in ipairs(ids) do
+    local num = slots[id]
+    if values[id] ~= nil and not index.num[id] then
+      index.num[id], index.id[num] = num, id
+      index.ids[#index.ids + 1] = id
+      if index.removed then index.removed[num] = nil end
+    end
+  end
+  return ids, values, slots
+end
+
+local function removeNativeIndex(index, id, num)
+  index.removed = index.removed or {}
+  index.removed[num] = id
+  index.num[id], index.id[num] = nil, nil
+  for i = #index.ids, 1, -1 do
+    if index.ids[i] == id then table.remove(index.ids, i) end
+  end
+end
+
+local function updateNativeNames(target, num, id, value, kind)
+  local byName = tableAt(target, kind == "moves" and "_numByName" or "_byName")
+  if not byName and kind == "moves" and type(target.numForName) == "function" then
+    byName = {}
+    for key, name in pairs(target.BY_NUM or {}) do byName[name] = key end
+    rawset(target, "_numByName", byName)
+  end
+  if byName then
+    if value == nil then
+      for key, slot in pairs(byName) do
+        if slot == num then byName[key] = nil end
+      end
+    else
+      local name = value.name or id
+      if kind == "species" then
+        byName[id:gsub("[^%w]", "")] = num
+        local normalized = G3.idOf(name)
+        if normalized then byName[normalized:gsub("[^%w]", "")] = num end
+      else
+        byName[id] = num
+        byName[name:upper():gsub("%s+", "_"):gsub("-", "_")] = num
+        if kind == "items" then
+          byName[name:upper()] = num
+          byName[name:upper():gsub("[^%w]", "")] = num
+        end
+      end
+    end
+  end
+  local byNum = kind == "moves" and tableAt(target, "BY_NUM")
+  if byNum then byNum[num] = value ~= nil and (byNum[num] or id) or nil end
+end
+
+local battleMoveMasks = setmetatable({}, { __mode = "k" })
+
+local function maskDeletedBattleMove(target, rows, num, deleted)
+  if type(target) ~= "table" or type(target.battleMove) ~= "function" then return end
+  local state = battleMoveMasks[target]
+  if not state then
+    if not deleted then return end
+    local original = target.battleMove
+    state = { rows = rows, removed = {} }
+    battleMoveMasks[target] = state
+    target.battleMove = function(moveId)
+      -- A fresh native pack ends this mask's lifetime without changing the pack.
+      if tableAt(target, "_battleMoves", "battleMoves") == state.rows
+          and state.removed[tonumber(moveId)] then return nil end
+      return original(moveId)
+    end
+  elseif state.rows ~= rows then
+    state.rows, state.removed = rows, {}
+  end
+  state.removed[num] = deleted or nil
+end
+
+-- The loader can prepare all registries before writers translate cross-registry ids.
+function G3.preindex(registries)
+  for _, name in ipairs({ "items", "moves", "pokemon" }) do
+    local registry = registries[name]
+    local target = registry and registry.base and registry.base()
+    if target and next(registry.ops) ~= nil then
+      if name == "pokemon" then
+        local t = monTables(target)
+        prepareNativeWrite(nameIndex("species", t.names), registry,
+          { t.names, t.stats, t.meta, t.types, t.abilities, t.learnsets,
+            t.eggMoves, t.evolutions, t.tmhm and t.tmhm.learnsets,
+            t.national and t.national.toNational }, { [412] = true })
+      elseif name == "moves" then
+        local t = monTables(sibling(target, "gen3Pokemon"))
+        local names = moveNamesFor(target)
+        prepareNativeWrite(nameIndex("moves", names), registry,
+          { moveRows(target), names, t.moveNames, t.battleMoves,
+            tableAt(target, "_linkRows") })
+      else
+        local rows = itemRows(target)
+        local pack = tableAt(target, "_pack")
+        prepareNativeWrite(nameIndex("items", rows, "name"), registry,
+          { rows, pack and tableAt(pack, "items"), tableAt(target, "items") })
+      end
+    end
+  end
+end
+
 local function writeMon(target, t, num, value)
   local moveIndex = moveIndexFor(sibling(target, "gen3Moves"), t.moveNames)
   local items = itemIndex(target)
@@ -1282,11 +1428,13 @@ local function writeMon(target, t, num, value)
         or tonumber(value.growthRate) or meta.growthRate
     end
     for _, key in ipairs({ "genderRatio", "eggCycles", "friendship" }) do
-      if value[key] ~= nil then meta[key] = value[key] end
+      meta[key] = value[key]
     end
     if type(value.eggGroups) == "table" then
       meta.eggGroup1 = value.eggGroups[1] or 0
       meta.eggGroup2 = value.eggGroups[2] or meta.eggGroup1
+    else
+      meta.eggGroup1, meta.eggGroup2 = nil, nil
     end
     meta.itemCommon = value.itemCommon and toNum(items, value.itemCommon) or 0
     meta.itemRare = value.itemRare and toNum(items, value.itemRare) or 0
@@ -1299,6 +1447,8 @@ local function writeMon(target, t, num, value)
       pair[slot] = toNum(abilityIndex, value.abilities[slot]) or 0
     end
     t.abilities[num] = pair
+  elseif t.abilities then
+    t.abilities[num] = nil
   end
   if type(value.learnset) == "table" and t.learnsets then
     local rows = {}
@@ -1314,6 +1464,8 @@ local function writeMon(target, t, num, value)
       if moveNum then list[#list + 1] = moveNum end
     end
     t.eggMoves[num] = list
+  elseif t.eggMoves then
+    t.eggMoves[num] = nil
   end
   if type(value.evolutions) == "table" and t.evolutions then
     local rows = {}
@@ -1339,17 +1491,29 @@ local function writeMon(target, t, num, value)
       elseif bit then hi = hi + 2 ^ (bit - 32) end
     end
     tmhm.learnsets[num] = { lo = lo, hi = hi }
+  elseif tmhm and type(tmhm.learnsets) == "table" then
+    tmhm.learnsets[num] = nil
   end
-  local national = value.dex or (num <= 251 and num or nil)
+  local national = value.dex or (t.national and t.national.toNational
+    and t.national.toNational[num]) or (num <= 251 and num or nil)
   if type(value.dexEntry) == "table" and t.dex and national then
     local old = t.dex[national] or {}
     t.dex[national] = {
       category = value.dexEntry.kind or old.category,
       height = value.dexEntry.height or old.height,
       weight = value.dexEntry.weight or old.weight,
-      heightM = value.dexEntry.heightM or old.heightM,
-      weightKg = value.dexEntry.weightKg or old.weightKg,
+      heightM = value.dexEntry.heightM,
+      weightKg = value.dexEntry.weightKg,
     }
+  elseif t.dex and national then
+    t.dex[national] = nil
+  end
+  if value.dex and t.national then
+    local toNational, toSpecies = t.national.toNational, t.national.toSpecies
+    local old = toNational and toNational[num]
+    if toSpecies and old ~= national and toSpecies[old] == num then toSpecies[old] = nil end
+    if toNational then toNational[num] = national end
+    if toSpecies then toSpecies[national] = num end
   end
   local sprites = sideTable(target, "spriteOverrides")
   local front = value.spriteFront ~= G3.vanillaSprite("front", num)
@@ -1366,19 +1530,42 @@ end
 local function monWrite(target, registry)
   local t = monTables(target)
   local index = nameIndex("species", t.names)
+  local occupied = { t.names, t.stats, t.meta, t.types, t.abilities,
+    t.learnsets, t.eggMoves, t.evolutions,
+    t.tmhm and t.tmhm.learnsets, t.national and t.national.toNational }
+  local ids, values, slots = prepareNativeWrite(index, registry, occupied, { [412] = true })
   local records = sideTable(target, "modRecords")
-  for id in pairs(registry.ops) do
-    local value = registry:get(id)
-    local num = index.num[id]
+  for _, id in ipairs(ids) do
+    local value, num = values[id], slots[id]
     if value == nil then
       records[id] = nil
-    else
-      if not num and type(value.index) == "number" and index ~= EMPTY_INDEX then
-        num = value.index
-        index.num[id], index.id[num] = id, id
-        index.ids[#index.ids + 1] = id
+      if num then
+        local national = t.national and t.national.toNational
+          and t.national.toNational[num] or (num <= 251 and num or nil)
+        for _, rows in pairs(occupied) do rows[num] = nil end
+        if t.dex and national then t.dex[national] = nil end
+        if t.national and t.national.toSpecies then
+          for dex, species in pairs(t.national.toSpecies) do
+            if species == num then t.national.toSpecies[dex] = nil end
+          end
+        end
+        for _, key in ipairs({ "spriteOverrides", "_icons", "_front", "_back" }) do
+          local rows = tableAt(target, key)
+          if rows then
+            for slot in pairs(rows) do
+              if slot == num or (type(slot) == "string"
+                  and (slot == tostring(num) or slot:match("^" .. num .. "_"))) then
+                rows[slot] = nil
+              end
+            end
+          end
+        end
+        updateNativeNames(target, num, id, nil, "species")
+        removeNativeIndex(index, id, num)
       end
+    else
       if num then writeMon(target, t, num, value) end
+      updateNativeNames(target, num, id, value, "species")
       records[id] = value
     end
   end
@@ -1397,7 +1584,7 @@ local function moveRecord(base, id)
     id = id, name = names[num] or id, index = num,
     type = G3.TYPES[row.type] or tostring(row.type),
     power = row.power or 0, accuracy = row.accuracy or 0, pp = row.pp or 0,
-    effect = row.effect, secondaryChance = row.secondaryChance,
+    effect = row.effect, secondaryChance = row.secondaryChance, _modEffectId = row._modEffectId,
     target = row.target, priority = row.priority, flags = row.flags,
     category = category,
   }
@@ -1419,20 +1606,33 @@ local function moveWrite(target, registry)
   if not rows then return end
   local names = moveNamesFor(target)
   local index = nameIndex("moves", names)
-  local pokemon = monTables(sibling(target, "gen3Pokemon"))
+  local pokemonBase = sibling(target, "gen3Pokemon")
+  local pokemon = monTables(pokemonBase)
+  local pokemonIndex = pokemon.moveNames and nameIndex("moves", pokemon.moveNames)
   local extra = pokemon.battleMoves ~= rows and pokemon.battleMoves or nil
+  local ids, values, slots = prepareNativeWrite(index, registry,
+    { rows, names, pokemon.moveNames, extra, tableAt(target, "_linkRows") })
   local records = sideTable(target, "modRecords")
-  for id in pairs(registry.ops) do
-    local value = registry:get(id)
-    local num = index.num[id]
+  for _, id in ipairs(ids) do
+    local value, num = values[id], slots[id]
     if value == nil then
       records[id] = nil
-    else
-      if not num and type(value.index) == "number" and index ~= EMPTY_INDEX then
-        num = value.index
-        index.num[id], index.id[num] = id, id
-        index.ids[#index.ids + 1] = id
+      if num then
+        rows[num], names[num] = nil, nil
+        if extra then extra[num] = nil end
+        if pokemon.moveNames then pokemon.moveNames[num] = nil end
+        local romNames = tableAt(pokemonBase, "_romMoveNames")
+        if romNames then romNames[num] = nil end
+        local linked = tableAt(target, "_linkRows")
+        if linked then linked[num] = nil end
+        maskDeletedBattleMove(pokemonBase, pokemon.battleMoves, num, true)
+        updateNativeNames(target, num, id, nil, "moves")
+        removeNativeIndex(index, id, num)
+        if pokemonIndex and pokemonIndex ~= index then
+          removeNativeIndex(pokemonIndex, id, num)
+        end
       end
+    else
       if num then
         local row = {}
         for key, v in pairs(type(rows[num]) == "table" and rows[num] or {}) do
@@ -1440,8 +1640,8 @@ local function moveWrite(target, registry)
         end
         for _, key in ipairs({ "power", "accuracy", "pp", "effect",
                                "secondaryChance", "target", "priority",
-                               "flags" }) do
-          if value[key] ~= nil then row[key] = value[key] end
+                               "flags", "_modEffectId" }) do
+          row[key] = value[key]
         end
         if value.type ~= nil then
           row.type = TYPE_NUMS[value.type] or tonumber(value.type) or row.type
@@ -1449,6 +1649,16 @@ local function moveWrite(target, registry)
         rows[num] = row
         if extra then extra[num] = row end
         if names and type(value.name) == "string" then names[num] = value.name end
+        if pokemon.moveNames and type(value.name) == "string" then
+          local other = nameIndex("moves", pokemon.moveNames)
+          if not other.num[id] then other.ids[#other.ids + 1] = id end
+          other.num[id], other.id[num] = num, id
+          pokemon.moveNames[num] = value.name
+        end
+        local romNames = tableAt(pokemonBase, "_romMoveNames")
+        if romNames and romNames[num] == nil then romNames[num] = value.name end
+        maskDeletedBattleMove(pokemonBase, pokemon.battleMoves, num, false)
+        updateNativeNames(target, num, id, value, "moves")
       end
       records[id] = value
     end
@@ -1475,22 +1685,30 @@ local function itemWrite(target, registry)
   local rows = itemRows(target)
   if not rows then return end
   local index = nameIndex("items", rows, "name")
+  local pack = tableAt(target, "_pack")
+  local packed = pack and tableAt(pack, "items")
+  local extra = tableAt(target, "items")
+  local ids, values, slots = prepareNativeWrite(index, registry, { rows, packed, extra })
   local records = sideTable(target, "modRecords")
-  for id in pairs(registry.ops) do
-    local value = registry:get(id)
-    local num = index.num[id]
+  for _, id in ipairs(ids) do
+    local value, num = values[id], slots[id]
     if value == nil then
       records[id] = nil
-    else
-      if not num and type(value.index) == "number" and index ~= EMPTY_INDEX then
-        num = value.index
-        index.num[id], index.id[num] = id, id
-        index.ids[#index.ids + 1] = id
+      if num then
+        rows[num] = nil
+        if packed then packed[num] = nil end
+        if extra then extra[num] = nil end
+        updateNativeNames(target, num, id, nil, "items")
+        removeNativeIndex(index, id, num)
       end
+    else
       if num then
         local row = Merge.deepCopy(value)
         row.id, row.index = nil, nil
         rows[num] = row
+        if packed then packed[num] = row end
+        if extra then extra[num] = row end
+        updateNativeNames(target, num, id, value, "items")
       end
       records[id] = value
     end
@@ -1871,6 +2089,7 @@ R.moves = {
     accuracy = f.int(0, 100),
     pp = f.int(0, 64),
     effect = f.id("move_effects"),
+    _modEffectId = f.opt(f.str),
     anim = f.opt(f.any),
     category = f.opt(f.enum{ "physical", "special", "status" }),
     priority = f.opt(f.int(-7, 7)),
@@ -1890,6 +2109,7 @@ R.moves = {
     type = f.id("type_chart"),
     power = f.int(0, 255), accuracy = f.int(0, 100), pp = f.int(0, 64),
     effect = f.opt(f.int(0, 255)), secondaryChance = f.opt(f.int(0, 100)),
+    _modEffectId = f.opt(f.str),
     target = f.opt(f.int(0, 255)), priority = f.opt(f.int(-7, 7)),
     flags = f.opt(f.int(0, 255)),
     category = f.opt(f.enum{ "physical", "special", "status" }),

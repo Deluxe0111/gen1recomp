@@ -89,6 +89,7 @@ local Game2 = {}
 Game2.__index = Game2
 
 local function noop() end
+local function resolveLogicSpeedVanilla(game) return game:_resolveLogicSpeed() end
 
 -- THE FRAME AND INPUT SEAMS.
 --
@@ -1394,11 +1395,17 @@ function Game2:_speedLockEdge()
   end
 end
 
+function Game2:_resolveLogicSpeed()
+  return math.max(1, tonumber(self.options and self.options.speed) or 1)
+end
+
 function Game2:logicSpeed()
   if self:speedLocked() then return 1 end
-  return math.max(1,
-    tonumber(self.speedOverride) or tonumber(self.options and self.options.speed)
-    or 1)
+  local override = tonumber(self.speedOverride)
+  if override then return math.max(1, override) end
+  if not ModRuntime.wantsHook("core.logic_speed") then return self:_resolveLogicSpeed() end
+  return lazy("src.core.GameSpeed").clamp(ModRuntime.call("core.logic_speed",
+    resolveLogicSpeedVanilla, self))
 end
 
 function Game2:update(dt)

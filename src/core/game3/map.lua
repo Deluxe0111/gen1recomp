@@ -828,7 +828,7 @@ function Map.load(mod, game, mapId, opts)
   end
 
   -- Map BGM from extract index / header music.
-  do
+  if not opts.keepMusic then
     local Audio = require("src.core.game3.audio")
     local music = def and def.music
     if not music and Audio._pack and Audio._pack.index and Audio._pack.index.mapSongs then
