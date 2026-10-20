@@ -212,12 +212,8 @@ end
 -- Game2:draw composites a `present` pipeline.  Both are asserted in the shared
 -- set above.
 --
--- `transitions` stays because Gold's own intro
--- (src/ui/gen2/BattleTransition.lua) keys STYLES as a boolean SET of the four
--- cart wipes rather than the { frames, draw, sound, flash } record this
--- registry carries, and has no styleDef lookup a mod id could reach.
-for _, name in ipairs({ "rulesets", "transitions",
-                        "field", "text_pointers", "link_fields" }) do
+for _, name in ipairs({ "rulesets",
+                        "text_pointers", "link_fields" }) do
   local spec = Schemas.REGISTRIES[name]
   T.check(spec ~= nil, "catalog still has registry: " .. name)
   T.eq(Schemas.targetFor(name, spec, 2), nil,
@@ -439,7 +435,9 @@ local GEN2_HOOKS = {
   -- nextFn gets nil there).
   "battle.catch_exp", "battle.low_health_alarm", "battle.overlay",
   "battle.bottom_ui_visible", "battle.status_hud_visible",
-  "battle.move_grid_navigation",
+  "battle.move_grid_navigation", "battle.caught_marker_visible",
+  "battle.field_residual", "battle.menu_auxiliary",
+  "trainer.before_battle", "core.logic_speed",
   -- One pic path resolver for both games: the Gen 1 site is the SHARED
   -- src/pokemon/Sprites.lua and Gold's own battle screen calls the same hook
   -- with the Gen 1 ctx keys plus `letter` and `shiny`, which Red has no
@@ -687,11 +685,8 @@ local GEN2_READY = {
     local mod = ...
     -- one registry with a Gen 2 home, one without: the first applies in both
     -- generations, the second applies in Gen 1 and reports in Gen 2.
-    -- `transitions` is the gated one because Gold draws its own battle intro
-    -- (src/ui/gen2/BattleTransition.lua) and never composes through the Gen 1
-    -- Renderer, so nothing on a Gold boot would ever read the merged record.
     mod.content.pokemon:patch("FIXMON_A", { catchRate = 123 })
-    mod.content.transitions:register("FIXTURE_WIPE", { frames = 30 })
+    mod.content.link_fields:register("FIXTURE_WIPE", { rev = 1 })
   ]],
 }
 
@@ -722,9 +717,9 @@ do
     "Gen 1: a gen2compat mod loads too")
   T.eq(run.data.pokemon.FIXMON_A.catchRate, 123,
     "Gen 1: the later mod's patch merged")
-  T.check(run.data.transitions ~= nil
-    and run.data.transitions.FIXTURE_WIPE ~= nil,
-    "Gen 1: transitions merged")
+  T.check(run.data.link_fields ~= nil
+    and run.data.link_fields.FIXTURE_WIPE ~= nil,
+    "Gen 1: link_fields merged")
   run.release()
 end
 
@@ -753,12 +748,12 @@ do
     "Gen 2: only the declared mod's patch merged")
 
   -- a gated registry takes the write, drops it, and says so
-  T.check(run.data.transitions == nil
-    or run.data.transitions.FIXTURE_WIPE == nil,
+  T.check(run.data.link_fields == nil
+    or run.data.link_fields.FIXTURE_WIPE == nil,
     "Gen 2: a gated registry merges nothing")
   local told = false
   for _, message in ipairs(run.errors) do
-    if message:match("transitions") and message:match("Gen 2") then told = true end
+    if message:match("link_fields") and message:match("Gen 2") then told = true end
   end
   T.check(told, "Gen 2: the dropped registration is reported, not silent")
   run.release()
