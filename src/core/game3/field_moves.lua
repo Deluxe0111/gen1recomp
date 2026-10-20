@@ -13,6 +13,7 @@ local function lazyReq(name)
 end
 
 local Flags = require("src.core.game3.scripting.flags")
+local ModRuntime = require("src.mods.Runtime")
 
 local FieldMoves = {}
 
@@ -276,11 +277,28 @@ local function textKey(key)
 end
 FieldMoves.textKey = textKey
 
+local TEXT_FALLBACKS = {
+  NO_SWEET_SCENT_MONS  = "Looks like there's nothing here…",
+  CANT_USE_HERE        = "Can't use that here.",
+  NOT_ENOUGH_HP        = "Not enough HP.",
+  TREE_CAN_BE_CUT      = "This tree looks like it can be CUT down!",
+  MON_MAY_SMASH_ROCK   = "This rock looks like it can be smashed with a POKéMON move!",
+  MON_MAY_PUSH_BOULDER = "It's a big boulder, but a POKéMON may be able to push it aside.",
+  CUT_NOTHING          = "There's nothing to CUT here.",
+  FLASH_IN_USE         = "FLASH is already in use.",
+  ALREADY_SURFING      = "You're already surfing.",
+  CANT_SURF_HERE       = "You can't surf here.",
+}
+
 FieldMoves.TEXT = setmetatable({}, {
   __index = function(_, key)
     local k = textKey(key)
-    if k then return lazyReq("src.core.game3.rom_text").ascii(k) end
-    return nil
+    local okRt, RomText = pcall(lazyReq, "src.core.game3.rom_text")
+    if okRt and RomText and k and RomText.has and RomText.has(k) then
+      local okAscii, res = pcall(RomText.ascii, k)
+      if okAscii and res then return res end
+    end
+    return TEXT_FALLBACKS[key] or nil
   end,
 })
 
@@ -310,7 +328,7 @@ end
 
 --- Check if the party has a mon knowing the given move
 -- Returns: monTable, slotIndex (0-based) or nil, 6
-function FieldMoves.partyMoveUser(party, moveIdentifier)
+local function findMoveUser(party, moveIdentifier)
   local targetId = FieldMoves.normalizeMoveId(moveIdentifier)
   if not targetId or not party then return nil, 6 end
 
@@ -324,6 +342,32 @@ function FieldMoves.partyMoveUser(party, moveIdentifier)
           return mon, slot - 1
         end
       end
+    end
+  end
+  return nil, 6
+end
+
+local function partyMoveUserVanilla(moveId, ctx)
+  return (findMoveUser(ctx and ctx.party, moveId))
+end
+
+function FieldMoves.partyMoveUser(party, moveIdentifier, fieldCtx)
+  if not ModRuntime.wantsHook("fieldmove.eligibility") then
+    return findMoveUser(party, moveIdentifier)
+  end
+  local moveId = FieldMoves.normalizeMoveId(moveIdentifier)
+  if not moveId or not party then return nil, 6 end
+  local runtime = package.loaded["src.core.game3.runtime"]
+  local game = fieldCtx and fieldCtx.game or runtime and runtime._game
+  local mon = ModRuntime.call("fieldmove.eligibility", partyMoveUserVanilla, moveId, {
+    save = fieldCtx and fieldCtx.save or game and game.save,
+    data = fieldCtx and fieldCtx.data or game and game.data,
+    party = party,
+    moveId = moveId,
+  })
+  if type(mon) == "table" and not mon.isEgg and not mon.egg then
+    for slot = 1, #party do
+      if rawequal(party[slot], mon) then return mon, slot - 1 end
     end
   end
   return nil, 6
@@ -420,7 +464,7 @@ function FieldMoves.cutFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.BADGE_REQUIRED, badge = "CUT" }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "CUT")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "CUT", ctx)
 
   -- pokefirered/src/fldeff_cut.c:123 SetUpFieldMove_Cut
   if ctx.isDottedHoleDoor or FieldMoves.ruinValleyCutCheck(ctx) then
@@ -475,7 +519,7 @@ function FieldMoves.flashFromMenu(ctx)
   -- pokeemerald/src/fldeff_flash.c:76
   if lazyReq("src.core.game3.constants").versionOf(ctx.session) == "emerald"
       and lazyReq("src.core.game3.braille_field").shouldDoRegisteel(ctx.session) then
-    return { ok = true, action = "braille_registeel", mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLASH") }
+    return { ok = true, action = "braille_registeel", mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLASH", ctx) }
   end
 
   -- src/party_menu.c:4047 DisplayCantUseFlashMessage
@@ -487,7 +531,7 @@ function FieldMoves.flashFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLASH")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLASH", ctx)
 
   -- data/scripts/flash.inc:1 EventScript_FldEffFlash
   return {
@@ -523,7 +567,7 @@ function FieldMoves.surfFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.CANT_SURF_HERE }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "SURF")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "SURF", ctx)
 
   -- src/party_menu.c:4055 FieldCallback_Surf
   return {
@@ -539,7 +583,7 @@ function FieldMoves.strengthFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.BADGE_REQUIRED, badge = "STRENGTH" }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "STRENGTH")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "STRENGTH", ctx)
   local RsBraille = lazyReq("src.core.game3.braille_field_rs")
   if RsBraille.isRs(ctx.session) then
     -- pokeruby/src/fldeff_strength.c:47
@@ -571,7 +615,7 @@ function FieldMoves.rockSmashFromMenu(ctx)
   -- pokeemerald/src/fldeff_rocksmash.c:125
   if lazyReq("src.core.game3.constants").versionOf(ctx.session) == "emerald"
       and lazyReq("src.core.game3.braille_field").shouldDoRegirock(ctx.session) then
-    return { ok = true, action = "braille_regirock", mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "ROCK_SMASH") }
+    return { ok = true, action = "braille_regirock", mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "ROCK_SMASH", ctx) }
   end
 
   if not ctx.facingObject or (ctx.facingObject.gfx ~= FieldMoves.GFX_IDS.ROCK_SMASH_ROCK
@@ -579,7 +623,7 @@ function FieldMoves.rockSmashFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "ROCK_SMASH")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "ROCK_SMASH", ctx)
 
   return {
     ok = true,
@@ -601,7 +645,7 @@ function FieldMoves.waterfallFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "WATERFALL")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "WATERFALL", ctx)
 
   return {
     ok = true,
@@ -619,14 +663,14 @@ function FieldMoves.flyFromMenu(ctx)
   -- pokeruby/src/pokemon_menu.c:833
   local RsBraille = lazyReq("src.core.game3.braille_field_rs")
   if RsBraille.isRs(ctx.session) and RsBraille.shouldDoFly(ctx.session) then
-    return { ok = true, action = "braille_rs_fly", mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLY") }
+    return { ok = true, action = "braille_rs_fly", mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLY", ctx) }
   end
 
   if not FieldMoves.isOutdoors(ctx.mapType) then
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLY")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLY", ctx)
 
   return {
     ok = true,
@@ -641,7 +685,7 @@ function FieldMoves.digFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "DIG")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "DIG", ctx)
   local RsBraille = lazyReq("src.core.game3.braille_field_rs")
   if RsBraille.isRs(ctx.session) and RsBraille.shouldDoDig(ctx.session) then
     return { ok = true, action = "braille_rs_dig", mon = mon, warp = ctx.escapeWarp }
@@ -661,7 +705,7 @@ function FieldMoves.teleportFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
 
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "TELEPORT")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "TELEPORT", ctx)
 
   return {
     ok = true,
@@ -672,9 +716,35 @@ function FieldMoves.teleportFromMenu(ctx)
   }
 end
 
+local function hasMovePp(mon, moveIdentifier)
+  if not mon then return false end
+  local targetId = FieldMoves.normalizeMoveId(moveIdentifier)
+  local moves = mon.moves or {}
+  for idx, m in ipairs(moves) do
+    local mId = FieldMoves.normalizeMoveId(m)
+    if mId == targetId then
+      if type(m) == "table" and m.pp ~= nil then
+        return (tonumber(m.pp) or 0) > 0
+      end
+      if type(mon.pp) == "table" and mon.pp[idx] ~= nil then
+        return (tonumber(mon.pp[idx]) or 0) > 0
+      end
+      return true
+    end
+  end
+  return false
+end
+FieldMoves.hasMovePp = hasMovePp
+
 --- Sweet Scent from Party Menu
 function FieldMoves.sweetScentFromMenu(ctx)
-  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "SWEET_SCENT")
+  local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "SWEET_SCENT", ctx)
+  if not mon then
+    return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
+  end
+  if not hasMovePp(mon, "SWEET_SCENT") then
+    return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
+  end
 
   return {
     ok = true,
@@ -682,7 +752,8 @@ function FieldMoves.sweetScentFromMenu(ctx)
     mon = mon,
     se = FieldMoves.SE.SWEET_SCENT,
     hasEncounter = ctx.hasWildEncounters == true,
-    failText = FieldMoves.TEXT.NO_SWEET_SCENT_MONS,
+    failText = FieldMoves.TEXT.NO_SWEET_SCENT_MONS or "Looks like there's nothing here…",
+    failKey = FieldMoves.textKey("NO_SWEET_SCENT_MONS"),
   }
 end
 
@@ -746,7 +817,7 @@ function FieldMoves.diveFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
   local mon, slot = ctx.mon, nil
-  if not mon then mon, slot = FieldMoves.partyMoveUser(ctx.party, "DIVE") end
+  if not mon then mon, slot = FieldMoves.partyMoveUser(ctx.party, "DIVE", ctx) end
   return { ok = true, action = "dive", mon = mon, slot = slot, diveCode = code, dest = dest }
 end
 
@@ -814,7 +885,7 @@ end
 
 --- Cut Tree Interaction (EventScript_CutTree)
 function FieldMoves.tryCutOW(ctx)
-  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "CUT")
+  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "CUT", ctx)
   local hasBadge = FieldMoves.hasBadge(ctx, "CUT")
 
   if not mon or not hasBadge then
@@ -839,7 +910,7 @@ end
 
 --- Rock Smash Interaction (EventScript_RockSmash)
 function FieldMoves.tryRockSmashOW(ctx)
-  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "ROCK_SMASH")
+  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "ROCK_SMASH", ctx)
   local hasBadge = FieldMoves.hasBadge(ctx, "ROCK_SMASH")
 
   if not mon or not hasBadge then
@@ -877,7 +948,7 @@ function FieldMoves.tryStrengthOW(ctx)
     }
   end
 
-  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "STRENGTH")
+  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "STRENGTH", ctx)
   local hasBadge = FieldMoves.hasBadge(ctx, "STRENGTH")
 
   if not mon or not hasBadge then
@@ -907,7 +978,7 @@ function FieldMoves.trySurfOW(ctx)
   end
   if not ctx.isFacingWater then return { ok = false } end
 
-  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "SURF")
+  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "SURF", ctx)
   local hasBadge = FieldMoves.hasBadge(ctx, "SURF")
 
   if not mon or not hasBadge then
@@ -933,7 +1004,7 @@ function FieldMoves.tryWaterfallOW(ctx)
     return { ok = false }
   end
 
-  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "WATERFALL")
+  local mon, slot = FieldMoves.partyMoveUser(ctx.party, "WATERFALL", ctx)
   local hasBadge = FieldMoves.hasBadge(ctx, "WATERFALL")
   local surfingNorth = ctx.isSurfing and ctx.facing == "up"
 

@@ -89,6 +89,7 @@ local Game2 = {}
 Game2.__index = Game2
 
 local function noop() end
+local function resolveLogicSpeedVanilla(game) return game:_resolveLogicSpeed() end
 
 -- THE FRAME AND INPUT SEAMS.
 --
@@ -290,7 +291,12 @@ end
 -- NEW GAME: a fresh save, then the Oak speech (which collects the name), then
 -- SPAWN_HOME.  engine/menus/intro_menu.asm NewGame is this same order.
 function Game2:newGame()
-  self.save = Save.newGame({ playerName = self.save.player.name })
+  local boot = self.data and self.data.field and self.data.field.boot
+  self.save = Save.newGame({
+    playerName = self.save.player.name,
+    startMoney = boot and boot.startMoney,
+    rivalName = boot and boot.rivalName,
+  })
   self.save.options = self.options
   self.sessionStartedAt = os.time()
   -- InitClock re-anchors this the moment the player answers Oak; the default
@@ -805,6 +811,12 @@ function Game2:usePartyItem(itemId)
   -- at all and never gets past the .Oak refusal below
   local action = ItemEffects.partyAction(itemId, self.data)
   if not action then return end
+  if not ItemEffects.needsTarget(itemId, self.data) then
+    local result = ItemEffects.useWithoutTarget(itemId, self.data, { game = self })
+    if result.used and not result.keep then self:consumeItem(itemId) end
+    if result.text and result.text ~= "" then self:say(result.text) end
+    return
+  end
   local party = (self.save and self.save.party) or {}
   if #party == 0 then
     -- UseItem's .NoPokemon arm (_YouDontHaveAMonText).
@@ -842,7 +854,7 @@ function Game2:usePartyItem(itemId)
       })
       return
     end
-    self:consumeItem(itemId)
+    if not result.keep then self:consumeItem(itemId) end
     if not menu then
       if action == "candy" then
         -- data/text/common_1.asm:86
@@ -873,7 +885,7 @@ function Game2:usePartyItem(itemId)
     onChoose = function(slot, mon)
       local before = mon and mon.hp
       if action ~= "pp" then
-        finish(ItemEffects.useOnMon(itemId, mon, self.data), mon, slot, before)
+        finish(ItemEffects.useOnMon(itemId, mon, self.data, { game = self }), mon, slot, before)
         return
       end
       -- RestorePPEffect: the ELIXER pair needs no move pick; an EGG refuses
@@ -1090,7 +1102,7 @@ function Game2:load(opts)
   self.data.pokemon = loadGenerated("data/generated/pokemon.lua") or {}
   self.data.items = loadGenerated("data/generated/items.lua") or {}
   self.data.moves = loadGenerated("data/generated/moves.lua") or {}
-  self.data.type_chart = loadGenerated("data/generated/type_chart.lua") or {}
+  self.data.type_chart = assert(loadGenerated("data/generated/type_chart.lua"))
   -- data/types/type_matchups.asm:112-116: the rows after the `db -2` marker
   -- apply by default; Foresight is what cuts the table short at it.
   local chart = self.data.type_chart
@@ -1394,11 +1406,17 @@ function Game2:_speedLockEdge()
   end
 end
 
+function Game2:_resolveLogicSpeed()
+  return math.max(1, tonumber(self.options and self.options.speed) or 1)
+end
+
 function Game2:logicSpeed()
   if self:speedLocked() then return 1 end
-  return math.max(1,
-    tonumber(self.speedOverride) or tonumber(self.options and self.options.speed)
-    or 1)
+  local override = tonumber(self.speedOverride)
+  if override then return math.max(1, override) end
+  if not ModRuntime.wantsHook("core.logic_speed") then return self:_resolveLogicSpeed() end
+  return lazy("src.core.GameSpeed").clamp(ModRuntime.call("core.logic_speed",
+    resolveLogicSpeedVanilla, self))
 end
 
 function Game2:update(dt)
@@ -1449,7 +1467,7 @@ end
 -- one screen pixel a cell out at survey range.
 function Game2:pixelScale(w, h)
   local _, _, pw, ph = Playfield.rect(w, h)
-  return math.max(1, math.floor(math.min(pw / 160, ph / 144)))
+  return Playfield.pixelScale(pw, ph, 160, 144)
 end
 
 -- A window-sized canvas the whole frame is composed into, so the post passes
@@ -1475,17 +1493,7 @@ end
 -- The letterbox this frame is being drawn in, in the terms Gen 1's
 -- Renderer:endFrame reports it: the integer fit scale, the centred origin that
 -- goes with it, the window in LOVE units and in framebuffer pixels, and the DPI
--- scale between the two.
---
--- One difference from Gen 1 has to be named, because two payload fields carry
--- it.  Gen 1 fits in FRAMEBUFFER pixels and divides back into units, so its
--- `scale` is framebuffer-pixels-per-GB-pixel; Gold fits in LOVE units
--- throughout (Chrome.fitScale takes love.graphics.getDimensions), so `scale`
--- here is units-per-GB-pixel.  They are the same number on every 1x display,
--- which is where Gen 1 mods are written and verified, and on a HiDPI display
--- this is the one that actually describes Gold's picture -- `gameX + x * scale`
--- lands on GB pixel x either way.  The rect fields (gameX/gameY/gameWidth/
--- gameHeight, ox/oy/vpw/vph) are LOVE units in both generations.
+-- scale between the two.  `scale` and the rect fields are LOVE units.
 function Game2:frameFit(w, h)
   local scale = Chrome.fitScale(w, h)
   local ox, oy = Chrome.fitOrigin(w, h, scale)
@@ -1493,8 +1501,7 @@ function Game2:frameFit(w, h)
   if love.window and love.window.getDPIScale then
     dpi = tonumber(love.window.getDPIScale()) or 1
   end
-  local pw, ph = w * dpi, h * dpi
-  pw, ph = GameViewport.pixelDimensions()
+  local pw, ph = GameViewport.pixelDimensions()
   return scale, ox, oy, dpi, pw, ph
 end
 
@@ -1642,18 +1649,21 @@ function Game2:fxWorldOrigin(w, h, scale)
   local fx, fy, fw, fh = Playfield.rect(w, h)
   local bx, by = Game2.faithfulBox(fw, fh)
   if bx then fx, fy = fx + bx, fy + by end
-  return fx + math.floor(-cam.x * scale), fy + math.floor(-cam.y * scale)
+  return fx + Playfield.snap(-cam.x * scale), fy + Playfield.snap(-cam.y * scale)
 end
 
 function Game2:fxSplitsUi(w, h)
   local world = self.world
   if not (world and world.map) then return false end
-  local fs = world:fitScale()
-  if world:zoomScale() ~= fs then return true end
-  local wx, wy = self:fxWorldOrigin(w, h, fs)
+  local d = Playfield.ratio()
+  local fs = math.floor(world:fitScale() * d + 0.5)
+  if math.abs(world:zoomScale() * d - fs) > 1e-6 then return true end
+  local wx, wy = self:fxWorldOrigin(w, h, fs / d)
   if not wx then return false end
-  local ox, oy = Chrome.fitOrigin(w, h, fs)
-  return (ox - wx) % fs ~= 0 or (oy - wy) % fs ~= 0
+  local ox, oy = Chrome.fitOrigin(w, h, fs / d)
+  local dx = math.floor((ox - wx) * d + 0.5)
+  local dy = math.floor((oy - wy) * d + 0.5)
+  return dx % fs ~= 0 or dy % fs ~= 0
 end
 
 -- Gold's frame, and then the passes that run over it.
@@ -1872,30 +1882,50 @@ end
 
 function Game2.faithfulBox(w, h)
   if not require("src.core.FaithfulRes").scaleCap() then return nil end
-  local s = math.max(1, math.floor(math.min(w / 160, h / 144)))
+  local d = Playfield.ratio()
+  local s = Playfield.pixelScale(w, h, 160, 144, d)
   local bw, bh = 160 * s, 144 * s
   local lift = 0
   local ScreenPosition = require("src.core.ScreenPosition")
   if not ScreenPosition.skinActive(w, h) then
-    lift = ScreenPosition.lift(h, bh, ScreenPosition.safeTop())
+    lift = ScreenPosition.lift(h * d, bh, ScreenPosition.safeTop() * d)
   end
-  return math.floor((w - bw) / 2), math.floor((h - bh) / 2) - lift, bw, bh
+  return math.floor((w * d - bw) / 2 + 1e-6) / d,
+    (math.floor((h * d - bh) / 2 + 1e-6) - lift) / d, bw / d, bh / d
+end
+
+local function maskOutside(w, h, bx, by, bw, bh)
+  local G = love.graphics
+  G.push("all")
+  G.setShader()
+  G.setBlendMode("alpha")
+  G.setColor(0, 0, 0, 1)
+  if bx > 0 then G.rectangle("fill", 0, 0, bx, h) end
+  if bx + bw < w then G.rectangle("fill", bx + bw, 0, w - bx - bw, h) end
+  if by > 0 then G.rectangle("fill", bx, 0, bw, by) end
+  if by + bh < h then G.rectangle("fill", bx, by + bh, bw, h - by - bh) end
+  G.pop()
 end
 
 function Game2:drawContained(w, h)
   local pw, ph, px, py = Playfield.push(w, h)
+  local G = love.graphics
+  local fw, fh = pw, ph
   local bx, by, bw, bh = Game2.faithfulBox(pw, ph)
   if bx then
-    local G = love.graphics
     G.setColor(0, 0, 0, 1)
     G.rectangle("fill", 0, 0, pw, ph)
     G.setColor(1, 1, 1, 1)
-    G.setScissor(px + bx, py + by, bw, bh)
+    G.push()
     G.translate(bx, by)
     Playfield.enter(px + bx, py + by, bw, bh)
     pw, ph = bw, bh
   end
   local ok, err = pcall(self.drawScene, self, pw, ph)
+  if bx then
+    G.pop()
+    if ok then maskOutside(fw, fh, bx, by, bw, bh) end
+  end
   Playfield.pop()
   if not ok then error(err, 0) end
 end

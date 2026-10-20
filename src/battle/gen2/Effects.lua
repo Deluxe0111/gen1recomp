@@ -290,12 +290,6 @@ function Effects.hitCount(effect, random)
   return Effects.HIT_COUNTS[effect] or 1
 end
 
--- Triple Kick's power climbs 10/20/30 across its three kicks
--- (BattleCommand_TripleKick).
-function Effects.tripleKickPower(base, hit)
-  return (base or 10) * hit
-end
-
 -- ----------------------------------------------------------- recoil and drain
 
 -- BattleCommand_Recoil: a quarter of the damage dealt, minimum 1.
@@ -512,11 +506,10 @@ function Effects.weatherModifier(weather, moveType, effect)
   return 1
 end
 
--- BattleCommand_CheckHit (engine/battle/effect_commands.asm): Thunder's base
--- accuracy is overridden by weather before stage modifiers are applied.
+-- engine/battle/effect_commands.asm:1741, engine/battle/move_effects/thunder.asm:10
 Effects.WEATHER_ACCURACY_OVERRIDES = {
-  rain = { EFFECT_THUNDER = 100 },
-  sun  = { EFFECT_THUNDER = 50  },
+  rain = { EFFECT_THUNDER = true },
+  sun  = { EFFECT_THUNDER = 128 },
 }
 
 function Effects.weatherAccuracyOverride(weather, effect)
@@ -651,12 +644,6 @@ end
 -- SUBSTATUS_RAGE: while it is set, every hit the user takes raises its Attack
 -- one stage.  It is cleared by using any other move.
 
--- ---------------------------------------------------------------- Future Sight
---
--- Four turns: the damage is rolled NOW, stored, and lands when the counter
--- reaches one.  The move itself does nothing on the turn it is used.
-Effects.FUTURE_SIGHT_TURNS = 4
-
 -- ---------------------------------------------------------------------- OHKO
 --
 -- BattleCommand_OHKO fails outright when the target is the higher level; when
@@ -698,8 +685,9 @@ end
 -- BEFORE Battle:clearVolatile, which is what puts it back and clears both keys
 -- (Battle:untransform).  Dropping it here would strand a passing DITTO as a
 -- permanent copy instead.
+-- engine/battle/move_effects/baton_pass.asm:140
 Effects.BATON_PASS_DROPS = {
-  "nightmare", "disable", "disableTurns", "attract", "transformed",
+  "nightmare", "disabled", "disabledTurns", "attract", "transformed",
   "encore", "encoreTurns", "lastMove",
 }
 

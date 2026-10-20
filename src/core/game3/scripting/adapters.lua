@@ -560,6 +560,10 @@ function Adapters.host(mod, game, world)
       if cb then cb() end
       tick_vm()
     end,
+    clearWaitButton = function()
+      local Hud = package.loaded["src.ui.game3.hud"]
+      if Hud and Hud.clearWaitButton then Hud.clearWaitButton() end
+    end,
     -- Gen1 pokecenter uses HEAL/CANCEL; Gen2 askYesNo is YES/NO over stayed text.
     askYesNo = function(cb, layout)
       local function finish(yes)
@@ -573,7 +577,7 @@ function Adapters.host(mod, game, world)
         Hud.ensure(resolveGame(), "message")
         a.log("[game3] yes/no via game3 Choice (not Gen2 askYesNo)")
         Choice.yesNo(finish, layout)
-        -- Do NOT autoPick — player must answer on HUD.
+        -- Do NOT autoPick: player must answer on HUD.
         return
       end
       local w = resolveWorld()
@@ -692,7 +696,7 @@ function Adapters.host(mod, game, world)
         tick_vm()
       end
       -- pret special HealPlayerParty is silent (no nurse dialogue). Dialogue
-      -- lives in the surrounding script; never call Gen1 OC.nurseHeal here —
+      -- lives in the surrounding script; never call Gen1 OC.nurseHeal here:
       -- that method needs an OverworldState self + Game upvalue.
       local Runtime = package.loaded["src.core.game3.runtime"]
       if Runtime and Runtime.isActive and Runtime.isActive() then
@@ -954,7 +958,7 @@ function Adapters.host(mod, game, world)
       end
     end,
     applyMovement = function(localId, stream, done)
-      -- On Sevii, always drive game3 EventObjects / Player — never host scriptStep.
+      -- On Sevii, always drive game3 EventObjects / Player: never host scriptStep.
       local Runtime = package.loaded["src.core.game3.runtime"]
       if Runtime and Runtime.isActive and Runtime.isActive() then
         local Objects = require("src.core.game3.objects")
@@ -987,7 +991,7 @@ function Adapters.host(mod, game, world)
       advanceMoveTracks()
     end,
     pollMovement = function(localId, _entry)
-      -- Prefer EventObjects whenever they own the map — not only when a track
+      -- Prefer EventObjects whenever they own the map: not only when a track
       -- is already active (hasActiveTracks false → moveTracks treated missing
       -- as done and skipped Bill / Oak waits).
       local okO, Objects = pcall(require, "src.core.game3.objects")
@@ -1305,7 +1309,7 @@ function Adapters.host(mod, game, world)
         finish()
         return
       end
-      -- Gen2 World:setMap(mapId, cx, cy, facing) — coords required (nil cx crashes).
+      -- Gen2 World:setMap(mapId, cx, cy, facing): coords required (nil cx crashes).
       local function as_coord(v)
         v = tonumber(v)
         if not v then return nil end
@@ -1552,7 +1556,42 @@ function Adapters.host(mod, game, world)
     startTrainerBattle = function(foe, done, battleOpts)
       local BattleBridge = require("src.core.game3.battle_bridge")
       battleOpts = battleOpts or {}
-      BattleBridge.start(mod, resolveGame(), foe, {
+      local Space = package.loaded["src.core.game3.scripting.space"]
+      local vm = Space and Space.vm
+      local ctx = vm and vm.ctx
+      local poll, scriptKey = ctx and ctx.nativePoll, vm and vm._scriptKey
+      local Runtime = package.loaded["src.core.game3.runtime"]
+      local session = Runtime and Runtime.getSession and Runtime.getSession()
+      local nativeGame = Runtime and Runtime._game
+      local g = resolveGame()
+      local world, overworld = g and g.world, g and g.overworld
+      local map = session and session.map
+      local Field = package.loaded["src.core.game3.field"]
+      local locks = Field and Field._locks
+      local completed = false
+      local function stopBattle(handler, reason)
+        if completed then return end
+        completed = true
+        if handler then
+          handler(reason)
+          return
+        end
+        if not vm or package.loaded["src.core.game3.scripting.space"] ~= Space
+            or Space.vm ~= vm or vm.ctx ~= ctx or ctx.nativePoll ~= poll
+            or vm._scriptKey ~= scriptKey then return end
+        if Runtime and (package.loaded["src.core.game3.runtime"] ~= Runtime
+            or Runtime._game ~= nativeGame
+            or (Runtime.getSession and Runtime.getSession()) ~= session) then return end
+        if g and (g.world ~= world or g.overworld ~= overworld) then return end
+        if session and session.map ~= map then return end
+        if not Field or package.loaded["src.core.game3.field"] ~= Field
+            or Field._locks ~= locks then return end
+        vm:halt(true)
+        Field.unlock()
+      end
+      local function cancel(reason) stopBattle(battleOpts.cancel, reason) end
+      local function failed(reason) stopBattle(battleOpts.failed, reason) end
+      local started, reason = BattleBridge.start(mod, g, foe, {
         wild = false,
         trainerId = battleOpts.trainerId or (foe and foe.trainerId),
         defeatText = battleOpts.defeatText or (foe and foe.defeatText),
@@ -1569,11 +1608,19 @@ function Adapters.host(mod, game, world)
         -- pokefirered/src/battle_message.c:2066 GetTrainerTowerOpponentName
         trainerName = battleOpts.trainerName or (foe and foe.trainerName),
         trainerPicId = battleOpts.trainerPicId or (foe and foe.trainerPicId),
-        done = function(result)
-          if done then done(result or "win") end
+        cancel = cancel,
+        failed = failed,
+        done = function(result, reason)
+          if result == "cancelled" then return cancel(reason) end
+          if result == "failed" then return failed(reason) end
+          if completed then return end
+          completed = true
+          if done then done(result) end
           tick_vm()
         end,
       })
+      if not started then failed(reason) end
+      return started, reason
     end,
     startWildBattle = function(foe, done, battleOpts)
       local BattleBridge = require("src.core.game3.battle_bridge")
