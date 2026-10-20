@@ -3961,7 +3961,9 @@ function BattleState:catchOptions(itemId)
   local enemy = battle and battle.enemy
   if not enemy then return nil end
   local enemyDef = data.pokemon and data.pokemon[enemy.species]
-  local dexEntry = data.gen2Pokedex and data.gen2Pokedex[enemy.species]
+  -- engine/items/item_effects.asm:758
+  local dexEntry = data.gen2Pokedex and data.gen2Pokedex.entries
+    and data.gen2Pokedex.entries[enemy.species]
   local evolveItem
   for _, entry in ipairs((enemyDef and enemyDef.evolutions) or {}) do
     if entry.method == "EVOLVE_ITEM" then evolveItem = entry.item end

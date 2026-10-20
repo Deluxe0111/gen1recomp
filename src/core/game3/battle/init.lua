@@ -784,7 +784,14 @@ function Battle.start(opts)
     -- pokeemerald/src/battle_controller_wally.c:1035
     st.backPicOverride = battleProfile.backPics and battleProfile.backPics.wally
   end
-  if st.kinds.partner and st.playerHalf then
+  local fp = type(opts.frontierPartner) == "table" and opts.frontierPartner or nil
+  if st.kinds.partner and st.playerHalf and fp then
+    -- pokeemerald/src/battle_message.c:2725
+    st.partner = {
+      trainerId = fp.trainerId, name = fp.name, class = tonumber(fp.class), className = fp.className,
+      frontPic = fp.pic, playerFrontPic = fp.playerPic,
+    }
+  elseif st.kinds.partner and st.playerHalf then
     -- pokeemerald/src/battle_message.c:2725
     local pinfo = opts.partnerTrainerId and Trainers.info(opts.partnerTrainerId) or {}
     st.partner = {
@@ -804,7 +811,7 @@ function Battle.start(opts)
       or (trainerInfo and trainerInfo.aiFlags)
       or 0
   else
-    -- pret gTrainers[].aiFlags / items[4] — drive battle AI scripts + item use.
+    -- pret gTrainers[].aiFlags / items[4]: drive battle AI scripts + item use.
     st.aiFlags = opts.aiFlags
       or (st.safari and 0x40000000)
       or (st.roamer and 0x20000000)
