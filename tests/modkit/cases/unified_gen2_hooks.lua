@@ -1,4 +1,3 @@
--- Inherited hooks exercised through the native Gold, Silver and Crystal owners.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -22,8 +21,6 @@ local savedRuntime = { Runtime.events, Runtime.hooks, Runtime.errors }
 local savedDraw, savedImage = Font.draw, Assets.image
 local printed, images = {}, {}
 
--- Only rendering boundaries are replaced; screen, world, VM and turn methods
--- below are the production implementations.
 Assets.image = function(path)
   if not images[path] then
     images[path] = love.graphics.newImage(path)
@@ -101,9 +98,8 @@ end
 local function newScreen(version)
   local game, battle = newBattle(version)
   local screen = BattleState.new(game, { battle = battle })
-  -- A settled decision boundary, assembled without replacing any methods.
   screen.phase, screen.slideFrame = "menu", 1000
-  screen.queue = {} -- Entrance animation events have already completed.
+  screen.queue = {}
   screen.showPlayerHud, screen.showEnemyHud = true, true
   screen.ballRows = { player = false, enemy = false }
   screen.shownMon = { player = battle.player, enemy = battle.enemy }
@@ -235,7 +231,6 @@ for _, version in ipairs({ "gold", "silver", "crystal" }) do
 
   exercise(version, "scripted trainer constructs one real battle", function()
     local game, world, _, record = trainerWorld(version)
-    -- A map-free native world opens the battle directly, without a map wipe.
     world.map = nil
     local starts, calls, continuation = 0, 0
     local seenBattles = {}

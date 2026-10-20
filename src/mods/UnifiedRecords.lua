@@ -1,17 +1,3 @@
--- API 3 runtime records. Both exports are pure: data supplies the native packs;
--- neither function loads a game, installs a pack, or recalculates Pokemon.
--- mon(native, generation, data, version) returns a detached view. Status IDs
--- are SLP/PSN/BRN/FRZ/PAR/TOX; nil means healthy. stats has
--- hp/attack/defense/speed/special, with optional split Special fields;
--- nickname is raw, name is a display alias, and moves has {id,pp,maxPp,ppUps}.
--- native is an inert, detached extension for inspecting native metadata.
--- applyMon(native, canonical, generation, data, version) returns true or
--- nil, reason, with no writes on failure. It accepts partial records; false
--- clears item/status. For a complete mon() view, removing either also clears
--- it. The native extension is never applied. Unchanged fields retain their
--- original representation, including PP metadata and Gen 3 numeric IDs.
--- Callers supply the selected version's packs in data. Gen 1 rejects held
--- items, eggs, unequal split Special, and Toxic writes (Toxic belongs to its battler).
 
 local Ids = require("src.mods.UnifiedIds")
 local Records = {}
@@ -73,7 +59,6 @@ local function integer(value, low, high)
     and value >= low and value <= high
 end
 
--- Matches the content registry's Gen 3 name-to-ID spelling.
 local function idOf(name)
   if type(name) ~= "string" then return nil end
   local s = name:gsub("é", "E"):gsub("É", "E")
@@ -477,8 +462,6 @@ function Records.applyMon(native, canonical, generation, data, version)
   return true
 end
 
--- Scalar identifiers have no PP/stat mutation contract. Callback adapters use
--- these helpers instead of constructing a partial live Pokemon for an ID.
 function Records.id(value, kind, generation, data, native)
   return readId(value, kind, generation, data, native)
 end

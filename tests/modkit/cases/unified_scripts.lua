@@ -1,4 +1,3 @@
--- Inherited script behavior through the real Loader and native world services.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -25,7 +24,6 @@ local function install(name, value)
   package.loaded[name] = value
 end
 
--- ROM census and font surfaces are the only replaced asset services.
 local nativeMapCatalog = require("src.import.gba.map_catalog")
 install("src.import.gba.map_catalog", setmetatable({ groupNumFor = function() return 1, 1 end }, { __index = nativeMapCatalog }))
 install("src.ui.game3.rs.font_faces", { load = function(_, name, language, _, _, _, textMode)
@@ -116,6 +114,10 @@ for _, owner in ipairs({ "script_probe", "other_probe" }) do
         ctx.runner:yield()
         bucket.afterYield = (bucket.afterYield or 0) + 1
       end)
+      mod.commands:register("probe_pending", function(ctx)
+        local bucket = ctx.save.modData[mod.id]
+        bucket.pending = { auto = ctx.pendingTextAuto, opts = ctx.textOpts }
+      end)
       mod.commands:register("probe_loop", function(ctx)
         local bucket = ctx.save.modData[mod.id]
         bucket.loops = (bucket.loops or 0) + 1
@@ -193,7 +195,6 @@ local function fixture(version)
       world.map = require("src.world.gen2.Map").new(data.maps.SCRIPT_HOME, { collision = {}, blocks = {} })
       world.player = require("src.world.gen2.Player").new(2, 3, "right")
       game.world = world
-      -- A wrong top-level wallet must never be mistaken for Gen 2's wallet.
       save.money, save.coins = 777, 888
     end
     f.ow, f.player = world, world.player
@@ -258,7 +259,6 @@ local function fixture(version)
   f.other = run.loader.exports.other_probe.world
   T.eq(#run.errors, 0, version .. " loads both real API 3 mods")
   Compat.bind(function() return f.live end)
-  -- Loader's provider is mutable so retained facades observe replacement.
   function f:provider(value) self.live, self.run.loader.game = value, value end
   function f:queue(rows, opts) return self.run.loader.exports.script_probe.queue(rows, opts) end
   function f:bucket() return self.save.modData.script_probe or {} end
@@ -383,7 +383,6 @@ local function fixture(version)
   return f
 end
 
--- Every edition executes this same scenario body and the same inherited rows.
 local function scenario(f)
   local version = f.version
   local started, ended, dispatched = 0, 0, {}
@@ -442,7 +441,6 @@ local function scenario(f)
     T.same(f.game.save, f.hostSave, version .. " never writes the host save")
   end
 
-  -- Preflight must not call a custom handler, normalize a bag, or allocate state.
   for _, tail in ipairs({ { { "unknown_script_probe" } },
       { { "jump", "missing" } },
       { { "label", "duplicate" }, { "label", "duplicate" } },
@@ -552,7 +550,6 @@ local function scenario(f)
   T.eq(dispatched.choice, 1, version .. " stale completion cannot open another menu")
   T.eq(f:bucket().calls, 2, version .. " stale completion cannot repeat custom commands")
 
-  -- Fill the actual native pocket, then retry the identical unconsumed gift.
   if f.generation == 3 then
     Bag3.clear(f.save.bag)
     for id = 20, 19 + Items3.CAPACITY.ITEMS do
@@ -719,6 +716,68 @@ local function martScenario(f)
   f:pump(2)
   T.eq(done, 1, version .. " duplicate mart completion cannot finish twice")
   T.eq(f:uiOpen(), false, version .. " completed mart leaves no UI")
+end
+
+local function giftTextScenario(f)
+  if f.generation == 1 then return end
+  local version = f.version
+  local data = f.game.data
+  local shown
+  if f.generation == 2 then
+    data.pokemon = data.pokemon or {}
+    data.pokemon.CHARMANDER = data.pokemon.CHARMANDER or { name = "CHARMANDER", dex = 4,
+      baseStats = { hp = 39, attack = 52, defense = 43, speed = 65, specialAttack = 60, specialDefense = 50 },
+      types = { "FIRE", "FIRE" }, growthRate = "GROWTH_MEDIUM_SLOW", levelMoves = {}, catchRate = 45,
+      genderRatio = 31, baseExp = 65 }
+    data.text = data.text or {}
+    data.text.ReceivedItemText = "{PLAYER} received\n{STRBUF}.{DONE}"
+    data.text._AskGiveNicknameText = "Give a nickname to\n{STRBUF}?{DONE}"
+    data.text._BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}"
+    f.save.party = {}
+    local queued, why = f:queue({ { "give_pokemon", "CHARMANDER", 5, true, true } })
+    T.eq(queued, true, version .. " accepts a native gift with received text: " .. tostring(why))
+    f:pump(2)
+    shown = f:text()
+    T.check(shown:find("received", 1, true) and shown:find("CHARMANDER", 1, true),
+      version .. " gift shows the native received line: " .. tostring(shown))
+    f:completeUI(1)
+    f:drain()
+    return
+  end
+  local RomText = require("src.core.game3.rom_text")
+  local rse = version == "ruby" or version == "sapphire" or version == "emerald"
+  local label = rse and "LittlerootTown_ProfessorBirchsLab_Text_LikeYouToHavePokemon"
+    or "Text_PlayerObtainedTheMon"
+  local ir = rse and {
+    { t = "text", s = "Oh, yes. As thanks for rescuing me," }, { t = "para" },
+    { t = "player" }, { t = "text", s = " received the " }, { t = "strvar", n = 1 },
+    { t = "text", s = "!" }, { t = "eos" } } or {
+    { t = "player" }, { t = "text", s = " obtained\nthe " }, { t = "strvar", n = 1 },
+    { t = "text", s = "!" }, { t = "eos" } }
+  RomText.overrides[label] = ir
+  local text = f.space.bundle.text
+  local fallback = getmetatable(text)
+  setmetatable(text, nil)
+  rawset(text, "Text_PlayerObtainedTheMon", nil)
+  f.save.party = {}
+  local Audio = require("src.core.game3.audio")
+  local playFanfare, fanfareDone = Audio.playFanfare, Audio.isFanfareFinished
+  Audio.playFanfare = function() return true end
+  Audio.isFanfareFinished = function() return true end
+  local ok, err = pcall(function()
+    T.eq(f:queue({ { "give_pokemon", "CHARMANDER", 5, true, true } }), true,
+      version .. " accepts a native gift with received text")
+    f:pump(2)
+    shown = f:text()
+    T.check(shown:find("CHARMANDER", 1, true) ~= nil,
+      version .. " gift shows the native received line: " .. tostring(shown))
+    T.check(not rse or shown:find("Oh, yes", 1, true) == nil,
+      version .. " gift drops the unrelated lead-in paragraph")
+  end)
+  RomText.overrides[label] = nil
+  Audio.playFanfare, Audio.isFanfareFinished = playFanfare, fanfareDone
+  setmetatable(text, fallback)
+  T.check(ok, version .. " gift text resolves natively" .. (ok and "" or ": " .. tostring(err)))
 end
 
 local function nicknameScenario(f)
@@ -888,7 +947,6 @@ local function encounterScenario(f)
     T.eq(f:bucket().battleReady, nil, version .. " encounter suspends its script tail")
     local stale = Bridge._finish
     T.check(type(stale) == "function", version .. " native encounter owns completion")
-    -- Finish through the native bridge; battle rendering needs a separate asset pack.
     Transition.finish()
     T.eq(Bridge._finish, stale, version .. " real native battle initialization accepts the transition")
     T.eq(require("src.core.game3.battle").isActive(), true, version .. " native battle becomes active")
@@ -928,6 +986,312 @@ local function encounterScenario(f)
   T.eq(Field.isLocked(), false, version .. " native cry wait releases Field locks")
 end
 
+local STORY_VERBS = { "old_man_demo", "ss_anne_departs", "pikachu_make_way",
+  "spawn_pikachu_follower", "rival_battle", "load_player_starter_name", "dex_rating",
+  "record_hall_of_fame", "save_end_battle_text" }
+local NATIVE_ONLY_VERBS = { "no_npc_face_player", "set_catch_rate",
+  "set_tile_anim", "run_parallel", "pushBattle" }
+local GEN1_ROWS = {
+  { "dex_rating" }, { "emote", "player", "shock", 1 }, { "fade", "out" },
+  { "load_player_starter_name" }, { "march_in_place", 1, true }, { "no_npc_face_player", true },
+  { "old_man_demo", "win" }, { "pan_camera", 1, 0, 10 }, { "pikachu_make_way" },
+  { "pushBattle", {} }, { "push_screen", "PartyMenu" }, { "record_hall_of_fame" },
+  { "rival_battle", "OPP_RIVAL1", {}, {} }, { "run_parallel", { { "wait", 1 } } },
+  { "save_end_battle_text", "TEXT_NONE" }, { "set_catch_rate", 1, 10 },
+  { "set_tile_anim", false }, { "spawn_pikachu_follower" }, { "ss_anne_departs" },
+  { "text_opts", { auto = true } }, { "trade", 1 }, { "walk_npc", "player", { "right" } },
+}
+
+local function drivePush(f, ticks)
+  for _ = 1, ticks or 120 do
+    local top = f.stack:top()
+    if top and top ~= f.ow and top.update then top:update(1 / 60) end
+    f:update()
+    if not f:lock() then break end
+  end
+end
+
+local function verbScenario(f)
+  local version, generation = f.version, f.generation
+  if generation == 1 then
+    f.game.data.field = f.game.data.field or {}
+    f.game.data.field.trades = { [1] = { give = "PIDGEY", get = "CHARMANDER", dialogset = 1 } }
+    for _, row in ipairs(GEN1_ROWS) do
+      local value, reason = f:queue({ { "end" }, row })
+      T.eq(value, true, version .. " keeps Gen 1 verb " .. row[1] .. (value and "" or ": " .. tostring(reason)))
+      f:drain()
+    end
+    T.check(select(2, f:queue({ { "push_screen", "NoSuchScreen" } })) ~= nil,
+      version .. " Gen 1 push_screen still rejects unknown screens")
+    T.check(select(2, f:queue({ { "trade", 99 } })) ~= nil,
+      version .. " Gen 1 trade still rejects unknown trades")
+    T.eq(f:queue({ { "text_opts", { auto = true } }, { "probe_pending" } }), true,
+      version .. " Gen 1 runs text_opts natively")
+    f:drain()
+    T.same(f:bucket().pending.opts, { auto = true }, version .. " Gen 1 text_opts arms the native box")
+    f.save.party = { {} }
+    T.eq(f:queue({ { "set_catch_rate", 1, 77 } }), true, version .. " Gen 1 runs set_catch_rate")
+    f:drain()
+    T.eq(f.save.party[1].catchRate, 77, version .. " Gen 1 set_catch_rate reaches the party")
+    f.save.party = {}
+    T.eq(f:queue({ { "fade", "out", "white" }, { "set_field", "mod:faded", true },
+      { "fade", "in", "white" } }), true, version .. " Gen 1 starts fade")
+    T.check(f.ow.fadeOverlay ~= nil, version .. " Gen 1 fade installs the native overlay")
+    drivePush(f, 300)
+    T.eq(f:lock(), nil, version .. " Gen 1 fade completes through the native overlay")
+    T.eq(f:bucket().faded, true, version .. " Gen 1 fade out resumes the script")
+    T.eq(f.ow.fadeOverlay, nil, version .. " Gen 1 fade in removes the overlay")
+    T.eq(f:queue({ { "pan_camera", 2, 1, 4 } }), true, version .. " Gen 1 starts pan_camera")
+    T.check(f.ow.cameraPan ~= nil and f.ow.cameraPan.toX == 32, version .. " Gen 1 pan_camera reaches the overworld")
+    UnifiedWorld.cancel(f.api, "pan")
+    T.eq(f:queue({ { "pan_camera", "reset" } }), true, version .. " Gen 1 resets the camera")
+    f:drain()
+    T.eq(f.ow.cameraPan, nil, version .. " Gen 1 pan_camera reset clears the pan")
+    return
+  end
+
+  for _, verb in ipairs(STORY_VERBS) do
+    local before = Merge.deepCopy(f.save)
+    local value, reason = f:queue({ { "give_money", 5 }, { verb, "x" } })
+    T.eq(value, nil, version .. " refuses Gen 1 story verb " .. verb)
+    T.eq(reason, "native content adapter unavailable: " .. verb, version .. " story verb " .. verb .. " fails clearly")
+    T.same(f.save, before, version .. " refused " .. verb .. " changes nothing")
+  end
+  for _, verb in ipairs(NATIVE_ONLY_VERBS) do
+    local value, reason = f:queue({ { verb, 1, true } })
+    T.eq(value, nil, version .. " refuses verb without a native equivalent " .. verb)
+    T.eq(reason, "native content adapter unavailable: " .. verb, version .. " " .. verb .. " fails clearly")
+  end
+  if generation == 2 then
+    for _, verb in ipairs({ "pan_camera", "march_in_place" }) do
+      local value, reason = f:queue({ { verb, 1, true } })
+      T.eq(value, nil, version .. " refuses " .. verb .. " without a native equivalent")
+      T.eq(reason, "native content adapter unavailable: " .. verb, version .. " " .. verb .. " fails clearly")
+    end
+  end
+  for _, bad in ipairs({
+      { "emote", "player", "bogus" }, { "emote", "player", 1 }, { "emote", "player", "shock", 0 },
+      { "fade", "sideways" }, { "fade", "out", 12 }, { "fade", "out", "white", "x" },
+      { "walk_npc", "player", { "sideways" } }, { "walk_npc", "player", {}, { stepFrames = 2 } },
+      { "text_opts", { auto = true, overlap = true } }, { "text_opts", { auto = false } },
+      generation == 3 and { "pan_camera", 1, 0, 30 } or { "march_in_place", 1, true },
+      generation == 3 and { "pan_camera", "reset", 1 } or { "walk_npc", "player", { "up" }, { wait = 1 } },
+      { "trade", 1, "FLAG" }, { "push_screen", "NoSuchScreen" }, { "march_in_place", 999, true },
+    }) do
+    local before = Merge.deepCopy(f.save)
+    local value, reason = f:queue({ { "give_money", 5 }, bad })
+    T.eq(value, nil, version .. " refuses malformed " .. bad[1])
+    T.check(type(reason) == "string" and #reason > 0, version .. " malformed " .. bad[1] .. " explains refusal")
+    T.same(f.save, before, version .. " malformed " .. bad[1] .. " changes nothing")
+  end
+
+  T.eq(f:queue({ { "text_opts", { auto = true } }, { "probe_pending" } }), true, version .. " runs text_opts")
+  f:drain()
+  T.eq(f:bucket().pending.auto, true, version .. " text_opts arms the next native box")
+  T.eq(f:queue({ { "text_opts", { auto = true } }, { "show_text", "_PortableScriptText", { PLAYER = "AUTO" } },
+    { "probe_pending" } }), true, version .. " runs auto text")
+  f:pump(2)
+  if generation == 2 then
+    local top = f.stack:top()
+    T.check(top.auto ~= nil and top.auto.wait == false, version .. " auto text uses the native no-wait box")
+  end
+  for _ = 1, 600 do
+    if generation == 3 then Message.skipReveal(); Message.tick() else
+      local top = f.stack:top()
+      if top and top ~= f.ow and top.update then top:update(1 / 60) end
+    end
+    f:update()
+    if not f:lock() then break end
+  end
+  T.eq(f:lock(), nil, version .. " auto text closes without a button")
+  T.eq(f:bucket().pending.auto, nil, version .. " auto text consumes the arming")
+
+  if generation == 2 then
+    f.ow.emoteOrder = { "shock", "question", "happy" }
+    f.ow.emoteImages = { shock = {}, question = {}, happy = {} }
+    T.eq(f:queue({ { "emote", "player", "question", 4 }, { "set_field", "mod:emoted", true } }), true,
+      version .. " starts emote")
+    T.check(f.ow.emote ~= nil and f.ow.emote.image == f.ow.emoteImages.question, version .. " emote selects the native bubble")
+    T.eq(f.ow.emote.left, 4, version .. " emote holds the requested frames")
+    f:pump(2)
+    T.eq(f:bucket().emoted, nil, version .. " emote blocks while the bubble shows")
+    f.ow.emote = nil
+    f:pump(2)
+    T.eq(f:bucket().emoted, true, version .. " emote resumes when the bubble clears")
+    T.eq(f:queue({ { "fade", "out", "white" } }), true, version .. " starts fade out")
+    f:drain()
+    T.eq(f.ow.fade, "white", version .. " fade out uses the native white fade")
+    T.eq(f:queue({ { "fade", "in" } }), true, version .. " starts fade in")
+    f:drain()
+    T.eq(f.ow.fade, nil, version .. " fade in clears the native fade")
+    local opened
+    f.ow.openNpcTrade = function(_, id, done) opened = { id = id, done = done }; return true end
+    T.eq(f:queue({ { "trade", 3 }, { "set_field", "mod:traded", true } }), true, version .. " starts trade")
+    T.eq(opened and opened.id, 3, version .. " trade reaches the native trade screen")
+    f:pump(2)
+    T.eq(f:bucket().traded, nil, version .. " trade blocks on the native screen")
+    opened.done()
+    f:pump(2)
+    T.eq(f:bucket().traded, true, version .. " native trade completion resumes the script")
+    local Screens = require("src.ui.Screens")
+    f.game.data.screens = { probe_screen = { __modOwned = true, new = function()
+      return { update = function() end, draw = function() end } end } }
+    Screens.invalidate()
+    T.eq(f:queue({ { "push_screen", "probe_screen" }, { "set_field", "mod:screened", true } }), true,
+      version .. " starts push_screen")
+    local pushed = f.stack:top()
+    T.check(pushed ~= nil and pushed.screenId == "probe_screen", version .. " push_screen pushes the registered screen")
+    f:pump(2)
+    T.eq(f:bucket().screened, nil, version .. " push_screen blocks while the screen is up")
+    f.stack:pop()
+    f:pump(2)
+    T.eq(f:bucket().screened, true, version .. " push_screen resumes after the screen pops")
+    f.game.data.screens = nil
+    Screens.invalidate()
+  else
+    local Fade = require("src.ui.game3.fade")
+    T.eq(f:queue({ { "fade", "out", "white" }, { "set_field", "mod:faded", true } }), true, version .. " starts fade out")
+    T.eq(Fade.active and Fade.mode, Fade.MODE.TO_WHITE, version .. " fade out starts the native white fade")
+    f:pump(2)
+    T.eq(f:bucket().faded, nil, version .. " fade blocks until the native fade ends")
+    for _ = 1, 40 do Fade.tick(1 / 60) end
+    f:drain()
+    T.eq(f:bucket().faded, true, version .. " fade resumes when the native fade ends")
+    T.eq(f:queue({ { "fade", "in", "white" } }), true, version .. " starts fade in")
+    T.eq(Fade.active and Fade.mode, Fade.MODE.FROM_WHITE, version .. " fade in starts the native fade-from-white")
+    for _ = 1, 40 do Fade.tick(1 / 60) end
+    f:drain()
+    Fade.clear()
+    T.eq(f:queue({ { "emote", "player", "shock", 3 }, { "set_field", "mod:emoted", true } }), true,
+      version .. " starts emote")
+    f:pump(2)
+    for _ = 1, 20 do Objects.update(1 / 60); f:update() end
+    f:drain()
+    T.eq(f:bucket().emoted, true, version .. " emote resumes after the native movement action")
+    T.eq(f:queue({ { "pan_camera", 1, 0 }, { "set_field", "mod:panned", true } }), true, version .. " starts pan_camera")
+    local Camera = require("src.core.game3.camera_object")
+    T.eq(Camera.isActive(), true, version .. " pan_camera spawns the native camera object")
+    for _ = 1, 60 do Objects.update(1 / 60); f:update() end
+    f:drain()
+    T.eq(f:bucket().panned, true, version .. " pan_camera resumes when the camera object arrives")
+    T.check(select(1, Camera.offset()) ~= 0, version .. " pan_camera moved the camera")
+    T.eq(f:queue({ { "pan_camera", "reset" } }), true, version .. " resets the camera")
+    f:drain()
+    T.eq(Camera.isActive(), false, version .. " pan_camera reset removes the camera object")
+    Camera.reset()
+
+    local Stack3 = require("src.ui.game3.stack")
+    local plain = f.game.stack
+    f.game.data.screens = { probe_screen = { new = function()
+      return { update = function() end, draw = function() end } end } }
+    T.eq(f:queue({ { "push_screen", "probe_screen" }, { "set_field", "mod:screened", true } }), true,
+      version .. " starts push_screen")
+    local screen = f.game.stack:top()
+    T.check(screen ~= nil and Stack3.depth() == 1, version .. " push_screen pushes the registered mod screen")
+    f:pump(2)
+    T.eq(f:bucket().screened, nil, version .. " push_screen blocks while the screen is up")
+    f.game.stack:pop()
+    f:pump(2)
+    f:drain()
+    T.eq(f:bucket().screened, true, version .. " push_screen resumes after the screen pops")
+    T.eq(f:queue({ { "push_screen", "probe_screen" } }), true, version .. " starts a cancellable push_screen")
+    UnifiedWorld.cancel(f.api, "screen")
+    T.eq(f.game.stack:top(), nil, version .. " cancellation pops the owned mod screen")
+    Stack3.clear()
+    f.game.data.screens, f.game.stack = nil, plain
+
+    local TradeKey, PartyKey = "src.core.game3.scripting.natives_trade", "src.ui.game3.party_menu"
+    local savedTrade, savedParty = package.loaded[TradeKey], package.loaded[PartyKey]
+    local menuOpts, scenes = nil, 0
+    package.loaded[TradeKey] = { entry = function(id)
+        return id == 1 and { requestedSpecies = 16, species = 4, personality = 1, abilityNum = 0,
+          otId = 1, heldItem = 0, nickname = "X", otName = "Y" } or nil
+      end,
+      levelOfSlot = function() return 5 end,
+      createTradeMon = function() return { species = 4, level = 5 } end,
+      sceneTask = function() scenes = scenes + 1
+        local n = 0
+        return function() n = n + 1; return n >= 3 end
+      end }
+    package.loaded[PartyKey] = { show = function(_, _, opts) menuOpts = opts end,
+      isOpen = function() return menuOpts ~= nil end, close = function() menuOpts = nil end }
+    local value, reason = f:queue({ { "trade", 9 } })
+    T.eq(value, nil, version .. " refuses an unknown native trade")
+    T.check(type(reason) == "string" and #reason > 0, version .. " unknown trade explains refusal")
+    f.save.party = { { species = 4, level = 5 }, { species = 16, level = 5 } }
+    T.eq(f:queue({ { "trade", 1 }, { "set_field", "mod:traded", true } }), true, version .. " starts trade")
+    T.check(menuOpts ~= nil, version .. " trade opens the native party menu")
+    menuOpts.onSelect(1); menuOpts.onClose()
+    f:pump(4)
+    T.eq(scenes, 0, version .. " a wrong species never starts the trade scene")
+    f:drain()
+    T.eq(f:bucket().traded, true, version .. " a refused trade still continues the script")
+    menuOpts = nil
+    T.eq(f:queue({ { "trade", 1 }, { "jump_if_false", "end" }, { "set_field", "mod:tradedOk", true } }), true,
+      version .. " starts the accepted trade")
+    menuOpts.onSelect(2); menuOpts.onClose()
+    f:pump(2)
+    T.eq(scenes, 1, version .. " the matching species runs the native trade scene")
+    T.eq(f:bucket().tradedOk, nil, version .. " trade blocks while the scene runs")
+    f:pump(6)
+    f:drain()
+    T.eq(f:bucket().tradedOk, true, version .. " a finished native trade sets the check")
+    package.loaded[TradeKey], package.loaded[PartyKey] = savedTrade, savedParty
+    f.save.party = {}
+
+    local walk = Objects.walkInPlaceType("down") or Objects.walkInPlaceType("up")
+    local pool = Objects.spawnFromDefs({ { localId = 5, x = 4, y = 4, graphicsId = 18, movementType = 8 } }, nil)
+    local eo = pool and pool.byId and pool.byId[5]
+    if eo then Objects._byId[5] = eo; Objects._order[#Objects._order + 1] = 5 end
+    if walk and eo then
+      eo.facing = "down"
+      local before = eo.movementType
+      T.eq(f:queue({ { "march_in_place", 5, true } }), true, version .. " accepts march_in_place")
+      f:drain()
+      T.eq(eo.movement, "IN_PLACE", version .. " march_in_place uses the native walk-in-place movement type")
+      T.eq(f:queue({ { "march_in_place", 5, false } }), true, version .. " accepts march_in_place off")
+      f:drain()
+      T.eq(eo.movementType, before, version .. " march_in_place off restores the movement type")
+    elseif eo then
+      local refused, why = f:queue({ { "march_in_place", 5, true } })
+      T.eq(refused, nil, version .. " refuses march_in_place without a native walk-in-place type")
+      T.eq(why, "native walk-in-place unavailable", version .. " march_in_place explains the refusal")
+    else
+      T.check(false, version .. " fixture spawns a native object")
+    end
+    Objects.reset()
+  end
+
+  T.eq(f:queue({ { "walk_npc", "player", { "right", "right" }, { wait = false } },
+    { "set_field", "mod:walkStarted", true } }), true, version .. " starts walk_npc")
+  f:pump(2)
+  for _ = 1, 240 do f:nativeUpdate(); f:update(); if not f:lock() then break end end
+  f:drain()
+  T.eq(f.player.cellX, 4, version .. " walk_npc moves the player through native movement")
+  T.eq(f:bucket().walkStarted, true, version .. " walk_npc wait=false lets the script continue")
+  f.player.cellX = 2
+  T.eq(f:queue({ { "walk_npc", "player", { "down" } }, { "set_field", "mod:walked", true } }), true,
+    version .. " starts blocking walk_npc")
+  f:pump(2)
+  T.eq(f:bucket().walked, nil, version .. " walk_npc blocks until the movement ends")
+  for _ = 1, 120 do f:nativeUpdate(); f:update() end
+  f:drain()
+  T.eq(f:bucket().walked, true, version .. " walk_npc resumes after native movement")
+  f.save.name, f.save.rivalName = "RED", "BLUE"
+  f.save.rival = { name = "BLUE" }
+  T.eq(f:queue({ { "show_text", "Hi {PLAYER}, {RIVAL} sent {STR_VAR_1}." } }), true, version .. " starts placeholder text")
+  f:pump(2)
+  if generation == 3 then
+    for _ = 1, 400 do Message.skipReveal(); Message.tick() end
+  end
+  local shown = f:text()
+  T.check(shown:find("BLUE", 1, true) ~= nil, version .. " portable text expands the rival name: " .. shown)
+  T.check(shown:find("RED", 1, true) ~= nil, version .. " portable text expands the player name: " .. shown)
+  f:completeUI(1)
+  f:drain()
+  T.eq(#f.run.errors, 0, version .. " adapted verbs report no runtime errors")
+end
+
 for _, version in ipairs({ "red", "blue", "yellow", "gold", "silver", "crystal",
     "firered", "leafgreen", "ruby", "sapphire", "emerald" }) do
   local f
@@ -938,6 +1302,8 @@ for _, version in ipairs({ "red", "blue", "yellow", "gold", "silver", "crystal",
     martScenario(f)
     nicknameScenario(f)
     encounterScenario(f)
+    verbScenario(f)
+    giftTextScenario(f)
   end)
   T.check(ok, version .. " scenario completes" .. (ok and "" or ": " .. tostring(err)))
   if f then

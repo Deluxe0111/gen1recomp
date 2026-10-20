@@ -563,7 +563,6 @@ function Encounters.rollFishing(mapId, rodKind, opts)
       if not same_fishing_pool(changed, baseline) then
         nativeOpts = {}
         for key, value in pairs(opts or {}) do nativeOpts[key] = value end
-        -- Selected-rod slots with native species IDs and explicit level bounds.
         nativeOpts.modFishingPool = changed
       end
     end

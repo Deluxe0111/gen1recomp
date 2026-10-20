@@ -1,4 +1,3 @@
--- API 3 content through the real sandbox, registry logs and native writers.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -27,7 +26,6 @@ local function dataFor(generation)
     data.gen3Text.BadControl = { { t = "ext", cmd = 1, args = { 2 } }, { t = "eos" } }
     data.gen3RomText = { CommonText = TextIR.fromAscii(SOURCE) }
     data.gen3Items._byId[13].description = "OPTIONAL"
-    -- Exercise the separate battle-move view as well as the ROM rows.
     data.gen3Pokemon._battleMoves = Merge.deepCopy(data.gen3Moves._rom)
     for offset, id in ipairs({ "REMOVED", "DELETED" }) do
       local species, move, item = 148 + offset, 118 + offset, 118 + offset
@@ -131,7 +129,6 @@ local function load(files, data, version, rollbackOwner)
   return loader, called and result, warnings
 end
 
--- These exact chunks run unchanged for every version in the matrix.
 local LEGACY_BEFORE = [[
 local mod = ...
 mod.content.moves:patch("POUND", { power = 49 })
@@ -165,7 +162,6 @@ assert(content.moves:get("POUND").category == "physical")
 assert(content.moves:get("POUND").power == 49 and content.items:get("POTION").price == 222)
 assert(mod:supports("content", "pokemon") == true)
 
--- All native indexes and crop defaults are supplied at the boundary.
 must(content.moves:register("FIX_HIT", {
   name = "FIX HIT", type = "NORMAL", power = 55, accuracy = 100, pp = 20, effect = "NO_ADDITIONAL_EFFECT" }))
 must(content.moves:register("FIX_NEXT", {
@@ -182,7 +178,6 @@ must(content.pokemon:register("FIXMON_B", species("FIXMON B")))
 local returned = must(content.pokemon:register("FIXMON_A", species("FIXMON A")))
 returned.baseStats.hp = 1
 assert(content.pokemon:get("FIXMON_A").baseStats.hp == 60)
--- Both species must be indexed before either native evolution is written.
 must(content.pokemon:patch("FIXMON_B", {
   evolutions = { { method = "LEVEL", level = 20, species = "FIXMON_A" } } }))
 must(content.pokemon:patch("FIXMON_A", {
@@ -280,7 +275,6 @@ end
 must(content.encounters:patch("FR_ROUTE_1", { grass = { rate = 31,
   slots = { { species = "FIXMON_B", level = 7 } } } }))
 
--- Detached nested values from every core registry, including each().
 for name, id in pairs({ pokemon = "MEW", moves = "POUND", items = "POTION",
     trainers = "326", encounters = "FR_ROUTE_1" }) do
   local row = must(content[name]:get(id))
@@ -337,19 +331,11 @@ if romAvailable then
 else
   assert(unsupported(content.rom_text:get("CommonText")) == romReason)
 end
-local available, reason = mod:supports("content", "evolution_methods")
-if mod.generation == 1 then
-  assert(available == true)
-  must(content.evolution_methods:register("PORTABLE", { check = function() return false end }))
-  assert(type(content.evolution_methods:get("PORTABLE").check) == "function")
-else
-  assert(available == false)
-  assert(unsupported(content.evolution_methods:get("LEVEL")) == reason)
-  assert(unsupported(content.evolution_methods:register("PORTABLE", {})) == reason)
-  assert(unsupported(content.evolution_methods:get("LEVEL")) == reason)
-end
+local available = mod:supports("content", "evolution_methods")
+assert(available == true)
+must(content.evolution_methods:register("PORTABLE", { check = function() return false end }))
+assert(type(content.evolution_methods:get("PORTABLE").check) == "function")
 
--- Dataset adapters use the selected dataset's generation, even on another engine.
 for _, version in ipairs({ "red", "gold" }) do
   local view = must(mod.datasets:open(version))
   local registry = view.content.pokemon
@@ -744,7 +730,6 @@ for _, version in ipairs(VERSIONS) do
   T.same(coreTables(baselineData), pristine, version .. " no-mod native content remains intact")
 end
 
--- Display labels must never replace canonical registry identity at runtime.
 do
   GameVersion.set("firered")
   local data = T.sdk.gen3Data()

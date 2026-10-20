@@ -120,9 +120,6 @@ function Registry:patch(id, partial, owner)
   return append(self, id, "patch", partial, owner)
 end
 
--- Trusted adapters translate a patch against the value at its exact position
--- in the owner log. Replaying after rollback must not retain another owner's
--- materialized list partitions. This is internal and never a mod callback.
 function Registry:patchTransformed(id, partial, owner, transform)
   if self.frozen then error(self.name .. ": content is frozen after load") end
   assert(self.spec.semantics ~= "compose", self.name .. ": transformed patch is record-only")

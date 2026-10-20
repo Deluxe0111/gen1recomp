@@ -1,4 +1,3 @@
--- Inherited mechanics through native Game3 mutation and decision paths.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -35,15 +34,12 @@ local function fixture(owner, key, value)
   owner[key] = value
 end
 
--- Only data, text, transport and persistence boundaries use fixtures.
 fixture(RomText, "plain", function(key) return key end)
 
 local function setup(version)
   Version.set(version)
   ModRuntime.install(Events.new(), Hooks.new(), {})
   local data = Sdk.gen3Data()
-  -- The native fingerprint accepts explicit ROM-data inputs; both relay peers
-  -- use this exact fixture pack, with no cache or fingerprint method override.
   data.gen3Inputs = { stats = data.gen3Pokemon._stats, types = data.gen3Pokemon._types,
     abilities = data.gen3Pokemon._abilities, meta = data.gen3Pokemon._speciesMeta,
     moves = data.gen3Moves._rom, items = data.gen3Items._byId,
@@ -86,7 +82,6 @@ local function pair(session, differentSpecies, differentTrainer)
   return dc
 end
 
--- Invert the native LCRNG to choose the next high word without replacing RNG.
 local function nextRoll(value)
   return { value = Rng.mulU32((value * 65536 - 24691) % 4294967296, 4005161829),
     value2 = 123, wild = 456 }
@@ -656,8 +651,6 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
   end)
 end
 
--- Extracted full route tables, ROM text/art and durable save I/O are outside
--- these fixtures; route graphs, text, relay and save outcomes are supplied above.
 Scene.cancel()
 LT.reset()
 Link.reset()

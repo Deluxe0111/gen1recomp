@@ -48,7 +48,7 @@ Objects._perm = {} -- [mapId] = { [localId] = { x=, y=, movementType= } }
 Objects._templateMt = {}
 Objects._logged = false
 Objects.runtimeByMap = {}
-local nextRuntimeIndex = 0 -- Never reuse public IDs after a session reset.
+local nextRuntimeIndex = 0
 local runtimePools = setmetatable({}, { __mode = "k" })
 
 local function cancelTrack(lid)
@@ -2694,6 +2694,34 @@ function Objects.setTrainerMovementType(localId, mt)
   if eo.movement == "RAISE_HAND" then
     eo.facing = "down"
   end
+end
+
+function Objects.walkInPlaceType(dir)
+  local pick
+  for id, ip in pairs(inPlaceTable()) do
+    if ip.dir == dir and (ip.frames == 16 or ip.frames == 32)
+        and (ip.always or fieldBlock().inPlaceMovementTypes) and (not pick or id < pick) then
+      pick = id
+    end
+  end
+  return pick
+end
+
+-- pokeemerald/src/event_object_movement.c:4422
+function Objects.setWalkInPlace(localId, on)
+  local eo = Objects._byId[tonumber(localId) or -1]
+  if not eo or eo == Player() then return false end
+  if not on then
+    local restore = eo.marchRestore
+    eo.marchRestore = nil
+    if restore then Objects.setTrainerMovementType(eo, restore) end
+    return true
+  end
+  local pick = Objects.walkInPlaceType(eo.facing)
+  if not pick then return false end
+  eo.marchRestore = eo.marchRestore or eo.movementType
+  Objects.setTrainerMovementType(eo, pick)
+  return true
 end
 
 -- src/event_object_movement.c:2640

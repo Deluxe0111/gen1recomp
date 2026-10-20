@@ -1,5 +1,3 @@
--- Reference-Hooks.md and the original ListMenu, OptionsMenu, NamingScreen,
--- and PartyMenu contracts, exercised at native input and drawing boundaries.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -33,7 +31,6 @@ local function fixture(owner, key, value)
   owner[key] = value
 end
 
--- The headless graphics seam has no native intersectScissor API.
 fixture(love.graphics, "intersectScissor", function(x, y, width, height)
   local sx, sy, sw, sh = love.graphics.getScissor()
   if sx then
@@ -44,7 +41,6 @@ fixture(love.graphics, "intersectScissor", function(x, y, width, height)
   love.graphics.setScissor(x, y, width, height)
 end)
 
--- Observe text while retaining native font layout and drawing.
 local originalDraw = Font.draw
 fixture(Font, "draw", function(text, x, y, ...)
   printed[#printed + 1] = { text = tostring(text), x = x, y = y }
@@ -69,7 +65,6 @@ local function has(rows, text)
   return false
 end
 
--- This exact entry chunk is shared by all five profiles and both API versions.
 local BODY = [[
 local mod = ...
 local out = mod.exports
@@ -257,7 +252,6 @@ local function exercise(version, label, fn)
   T.sdk.restoreRuntime()
 end
 
--- Neutral native packs take precedence over optional imported cache data.
 local baseRoot = Cache.root("meta.json", { native = true })
 local originalRead, originalLoad, originalInfo = love.filesystem.read, love.filesystem.load, love.filesystem.getInfo
 local assetRoot, assetVersion

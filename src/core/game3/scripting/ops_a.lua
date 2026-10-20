@@ -625,7 +625,9 @@ local function dispatch(vm, row)
       ctx.nativePoll = function()
         if not armed then
           armed = true
+          ctx.waitButtonArmed = true
           a.armWaitButton(function()
+            ctx.waitButtonArmed = nil
             pressed = true
           end)
         end
@@ -1708,7 +1710,6 @@ local function dispatch(vm, row)
       end
       ctx.nativePoll = poll
 
-      -- Unplayed battles halt the script instead of resuming post-battle rows.
       local function stopBattle(reason)
         if done or stopped or vm.ctx ~= ctx or ctx.nativePoll ~= poll then return end
         if Space and Space.vm ~= nativeVm then return end

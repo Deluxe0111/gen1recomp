@@ -1,4 +1,3 @@
--- Canonical species IDs through real Loader logs, records and callback buses.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -99,7 +98,6 @@ local function addMod(files, id, api, body)
   files["mods/" .. id .. "/main.lua"] = body
 end
 
--- This exact sandbox body runs on all eleven versions.
 local COMMON = [[
 local mod = ...
 local content, out = mod.content, mod.exports
@@ -277,7 +275,6 @@ end
 mod.exports.done = true
 ]]
 
--- The pure copy helper also handles cycles, deletion and inert native metadata.
 do
   local source = { id = "FARFETCH_D", species = "MR__MIME", item = "FARFETCH_D",
     label = "MR__MIME", nested = { id = "MR__MIME", into = "FARFETCH_D",
@@ -462,9 +459,6 @@ for _, version in ipairs(VERSIONS) do
     T.eq(nativeSlots[1].species, far, version .. " native encounter bird reference")
     T.eq(nativeSlots[2].species, mime, version .. " native encounter mime reference")
 
-    -- Native previews need no renderer. Battle startup here covers Gen 2's
-    -- real Mon.new; the fixture only captures the World:startBattle handoff.
-    -- Gen 1/3 battle startup needs additional battle/field assets.
     if generation ~= 3 then
       local game = loader.game
       if generation == 2 then game.data.encounters = data.gen2Encounters end

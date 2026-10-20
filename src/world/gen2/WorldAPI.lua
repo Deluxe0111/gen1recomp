@@ -393,7 +393,11 @@ function WorldAPI:mapOverview()
   return MapOverview.build(map, markers)
 end
 
-function WorldAPI:warpTo(mapId, x, y, facing, opts)
+function WorldAPI:warpTo(mapId, x, y, facing)
+  return self:_warpToWith(mapId, x, y, facing, nil)
+end
+
+function WorldAPI:_warpToWith(mapId, x, y, facing, opts)
   local world = self:overworld()
   if not world then return nil, NO_OVERWORLD end
   if not (world.maps and world.maps[mapId]) then

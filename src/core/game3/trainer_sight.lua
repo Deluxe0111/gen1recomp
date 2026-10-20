@@ -732,7 +732,11 @@ function TrainerSight.engagePair(game, a, b)
     local ok, err = require("src.core.game3.battle_bridge").start(Runtime._mod, game or Runtime._game, foe, battleOpts)
     if not ok then
       print("[game3/trainer_sight] two-trainer battle did not start: " .. tostring(err))
-      cancelBattle()
+      if ModRuntime.wantsHook("trainer.before_battle") then
+        cancelBattle()
+      else
+        finishBattle("lose")
+      end
     end
   end
 

@@ -2731,7 +2731,16 @@ local function draw_player_trainer(stage)
   if not stage or not stage.trainer then return end
   local TrainerPic = require("src.core.game3.trainer_pic")
   local tp = stage.trainer.player
-  if tp and tp.visible then
+  if tp and tp.visible and tp.fronts then
+    for _, row in ipairs(tp.fronts) do
+      local entry = TrainerPic.front(row[1])
+      if entry and entry.image then
+        love.graphics.setColor(1, 1, 1, 1)
+        -- pokeemerald/src/battle_controller_player.c:2335
+        love.graphics.draw(entry.image, row[2] + (tp.ox or 0) + 32, 80 + (tp.oy or 0) - 32, 0, -1, 1)
+      end
+    end
+  elseif tp and tp.visible then
     -- pokefirered/src/battle_controller_link_partner.c:1093
     local backs = { { tp.gender2, tp.x2 }, { tp.gender or 0, tp.x or 80 } }
     for _, row in ipairs(backs) do

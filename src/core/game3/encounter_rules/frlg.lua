@@ -388,7 +388,6 @@ local function choose_mod_fishing_index(pool)
       if rand < pool[i].chance then return i end
     end
   end
-  -- Modified pools without a complete byte CDF use uniform candidate selection.
   return 1 + (Rng.Random() % #pool)
 end
 

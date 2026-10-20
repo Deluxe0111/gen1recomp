@@ -365,7 +365,7 @@ function Loader:_installDevShim()
       local compat = compatFor(devShim.generation, devShim.version, id)
       if compat and compat.module.serves(name)
           and (owner or callerIsMod(3)) then
-        local adapter = compat.module.resolve(name, id)
+        local adapter = compat.module.resolve(name, id, devShim.apis[id])
         if adapter then
           local key = "adapter|" .. compat.tag .. "|" .. name
           if not devShim.warned[key] then
@@ -1510,7 +1510,7 @@ function Loader:_api(mod)
     },
     -- the widget toolkit facade (12 4.5) is one shared surface, not
     -- per-mod state; each widget inside it loads on first touch
-    ui = ModUI,
+    ui = ModUI.forApi(mod.manifest.api or 1),
     -- Read-only shared timestamp presentation using current options.lua
     -- preferences. The live game supplies only the current option context;
     -- checkpoint/save data never changes as a side effect.
@@ -1758,8 +1758,6 @@ function Loader:_api(mod)
     api.datasets.open = function(_, version)
       local view, reason = trustedDataset(openDataset, nil, version)
       if not view then return nil, reason end
-      -- Dataset reads hydrate trusted engine defaults lazily. Scope each call,
-      -- including iterators, without running any mod callback at shim depth.
       local content = {}
       for name, handle in pairs(view.content) do
         local native = handle
@@ -2034,6 +2032,10 @@ function Loader:_validateScripts()
   if not failed then return end
   -- purge the failed mods and whatever dependency enforcement takes with
   -- them, exactly as an entry-chunk failure would have
+  self:_purgeFailed()
+end
+
+function Loader:_purgeFailed()
   self:_enforceDependencies()
   for i = #self.loaded, 1, -1 do
     local mod = self.loaded[i]
@@ -2045,6 +2047,35 @@ function Loader:_validateScripts()
   for i = #self.order, 1, -1 do
     local mod = self.mods[self.order[i]]
     if mod and mod.failed then table.remove(self.order, i) end
+  end
+end
+
+function Loader:_preindexNative()
+  for _ = 1, 64 do
+    local failures = Schemas.gen3View.preindex(self.content)
+    if #failures == 0 then return end
+    local purged = false
+    for _, failure in ipairs(failures) do
+      local registry = failure.registry and self.content[failure.registry]
+      local ownerId = registry and failure.id and registry.owners[failure.id]
+      local mod = ownerId and self.mods[ownerId]
+      if mod and not mod.failed then
+        self:_fail(mod, "failed", failure.message)
+        purged = true
+      else
+        local message = tostring(failure.registry) .. ": " .. failure.message
+        local seen = false
+        for _, existing in ipairs(self.errors) do
+          if existing == message then seen = true end
+        end
+        if not seen then
+          self.errors[#self.errors + 1] = message
+          Logger.error("%s", message)
+        end
+      end
+    end
+    if not purged then return end
+    self:_purgeFailed()
   end
 end
 
@@ -2219,7 +2250,7 @@ function Loader:load(data, opts)
   -- home, creating the Data namespace when the base modules never shipped
   -- one.  A registry nobody wrote to -- engine included -- is skipped, so
   -- the namespaces that appear are exactly the ones with content behind them.
-  if self.generation == 3 then Schemas.gen3View.preindex(self.content) end
+  if self.generation == 3 then self:_preindexNative() end
   for _, name in ipairs(self:_mergeOrder()) do
     local registry = self.content[name]
     local spec = registry.spec
@@ -2229,7 +2260,12 @@ function Loader:load(data, opts)
       if spec.write then
         -- ids that do not map one-to-one onto target keys (type_chart's
         -- ordered rows, battle_anims' per-kind subtables) place themselves
-        spec.write(target, registry)
+        local wrote, writeErr = pcall(spec.write, target, registry)
+        if not wrote then
+          local message = name .. ": " .. tostring(writeErr)
+          self.errors[#self.errors + 1] = message
+          Logger.error("%s", message)
+        end
       elseif spec.semantics == "compose" then
         for id in pairs(registry.ops) do
           local chain = registry:chain(id)
@@ -2268,6 +2304,25 @@ function Loader:load(data, opts)
           if value == nil then
             tombstones[#tombstones + 1] = id
           else
+            if name == "evolution_methods" and self.generation == 2
+                and type(value) == "table" then
+              local checkOwner = registry.owners[id]
+              local list = registry.ops[id] or {}
+              for i = #list, 1, -1 do
+                local entry = list[i]
+                if type(entry.value) == "table" and entry.value.check ~= nil then
+                  checkOwner = entry.owner
+                  break
+                end
+              end
+              local owner = self.mods[checkOwner]
+              if owner and (owner.manifest.api or 1) >= 3 then
+                local copy = {}
+                for key, field in pairs(value) do copy[key] = field end
+                copy.gen1Shape = true
+                value = copy
+              end
+            end
             target[id] = value
           end
         end

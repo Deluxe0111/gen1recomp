@@ -21,6 +21,7 @@ local Kinds = require("src.core.game3.battle.kinds")
 local ModRuntime = require("src.mods.Runtime")
 local BattleText = require("src.core.game3.battle.battle_text")
 local RomText = require("src.core.game3.rom_text")
+local ModBattle = require("src.core.game3.battle.mod_registries")
 
 local Engine = {}
 
@@ -224,6 +225,7 @@ local function speed_of(battler, st, adapter)
   if he == HeldItems.HOLD.MACHO_BRACE then spe = math.floor(spe / 2) end
   local st1 = battler and (battler.status or (battler.mon and battler.mon.status))
   if st1 == "PAR" then spe = math.floor(spe / 4) end
+  if battler and battler.modStatus then spe = ModBattle.penalty(battler, "speed", spe) end
   if he == HeldItems.HOLD.QUICK_CLAW and st and (tonumber(st.randomTurnNumber) or 0xFFFF)
       < math.floor(0xFFFF * param / 100) then
     spe = 0xFFFFFFFF
@@ -623,6 +625,11 @@ local function canceller(M)
     end
   end
 
+  if user.modStatus and not ModBattle.beforeMove(M, true) then
+    Engine.cancelMultiTurnMoves(user)
+    return false
+  end
+
   if Abilities.truantLoafs(ad, user) then
     -- pokefirered/src/battle_util.c:1337
     Engine.cancelMultiTurnMoves(user)
@@ -693,7 +700,14 @@ local function canceller(M)
   if ad:status(user) == "PAR" and roll(ad, 0, 3) == 0 then
     M:sayId("STRINGID_PKMNISPARALYZED", { atk = user })
     ad:statusAnim(user, "PAR")
+    -- pokefirered/data/battle_scripts_1.s:3717
+    Engine.cancelMultiTurnMoves(user)
     user.expUnableToMove = true
+    return false
+  end
+
+  if user.modStatus and not ModBattle.beforeMove(M, false) then
+    Engine.cancelMultiTurnMoves(user)
     return false
   end
 
@@ -1598,10 +1612,16 @@ local function run(M)
       return
     end
 
+    local modRecord = ModBattle.effectRecord(M.move)
     local power = tonumber(M.move.power) or 0
     if power > 0 then
       local Hit = require("src.core.game3.battle.effects.hit")
       Hit.run(M)
+      if modRecord then
+        ModBattle.runAfterHit(M, modRecord)
+        M:tryFaintTarget()
+        M:tryFaintUser()
+      end
       move_end(M)
       return
     end
@@ -1609,7 +1629,12 @@ local function run(M)
     M.anim.statusOnly = true
     M:attackString()
     M:ppReduce()
-    local handled = Effects.runForMove(ad, M.user, M.target, M.moveId, M)
+    local handled
+    if modRecord and modRecord.kind == "primary" then
+      handled = ModBattle.runPrimary(M, modRecord)
+    else
+      handled = Effects.runForMove(ad, M.user, M.target, M.moveId, M)
+    end
     if not handled then
       M:attackAnimation()
       M:sayId("STRINGID_BUTNOTHINGHAPPENED")
@@ -1998,7 +2023,9 @@ function Engine.performSwitch(st, adapter, side, slot, opts)
   end
   Engine.switchOutEffects(st, adapter, old)
   State.syncBattlerToParty(old, party)
+  ModBattle.switchOut(st, old)
   local nb = State.makeBattler(party[slot], side, { partyIndex = slot, id = id, st = st })
+  ModBattle.switchIn(st, nb)
   if opts.batonPass then
     -- pokefirered/src/battle_main.c:2350
     for k, v in pairs(old.stages or {}) do nb.stages[k] = v end

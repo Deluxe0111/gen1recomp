@@ -1,7 +1,3 @@
--- API 3 live battle facade. Battlers are a list of mon views with id, side,
--- absent and optional partyIndex: singles use 0/1, doubles retain 0..3.
--- targets is always a list of those numeric IDs. Safari/Mimic fields and
--- native move preview fields are optional mechanics, not alternate schemas.
 local UnifiedBattle = {}
 
 local MODULES = {
@@ -97,7 +93,6 @@ end
 function UnifiedBattle.new(gameProvider, generation, version, engineRequire)
   local req = engineRequire or require
   local facade = {}
-  -- Each mod owns its intent sequence; retain it across provider replacement.
   local owners = {}
 
   local function resolve()
@@ -212,14 +207,12 @@ function UnifiedBattle.new(gameProvider, generation, version, engineRequire)
             if type(odds) == "number" and odds == odds then
               if odds >= 255 then row.catchChance = 100
               elseif odds > 0 then
-                -- Native vanilla_catch checks four independent 16-bit rolls.
                 local threshold = math.floor(1048560 / math.sqrt(math.sqrt(16711680 / odds)))
                 row.catchChance = (math.min(65536, threshold) / 65536) ^ 4 * 100
               else row.catchChance = 0 end
             end
           end
         elseif type(item.catchChance) == "number" and item.catchChance == item.catchChance then
-          -- Gen 1/2 native chance helpers return percentages, not rates.
           row.catchChance = math.max(0, math.min(100, item.catchChance))
         end
       end
@@ -231,7 +224,6 @@ function UnifiedBattle.new(gameProvider, generation, version, engineRequire)
         move.id = view.moves[1] and view.moves[1].id or tostring(move.id)
       end
     end
-    -- Strip any metadata aliases returned by a native implementation too.
     return copy(out)
   end
 

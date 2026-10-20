@@ -1,4 +1,3 @@
--- Inherited effects through the real Loader and the native effect consumers.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -74,6 +73,7 @@ local function dataFor(generation)
     data.moves.OBSERVED.effectChance, data.moves.OBSERVED.effectChanceRaw = 37, 95
     data.moves.OPAQUE.effect = "EFFECT_UNUSED_25"
     data.moves.OPAQUE.effectChance, data.moves.OPAQUE.effectChanceRaw = 17, 44
+    data.moves.OBSERVED.accuracyRaw, data.moves.OPAQUE.accuracyRaw = 229, 255
     for i, row in ipairs(CASES) do
       data.moves["NATIVE_SEED_" .. i] = { id = "NATIVE_SEED_" .. i, name = "NATIVE SEED " .. i,
         type = "NORMAL", power = row[5], accuracy = 100, pp = 20, effect = row[3] }
@@ -144,7 +144,6 @@ for _, row in ipairs(cases) do
   mod.exports.rows[id] = moves:get(id)
 end
 
--- Reading an existing native override must not select a move-index default.
 for _, id in ipairs({ "OBSERVED", "OPAQUE" }) do
   local before = must(moves:get(id))
   if id == "OPAQUE" and mod.generation ~= 1 then
@@ -341,6 +340,8 @@ end
 local function gen2Dispatch(data, version)
   local Battle = require("src.battle.gen2.Battle")
   local Mon = require("src.battle.gen2.Mon")
+  data.type_chart = data.type_chart or {}
+  data.type_chart.battleRules = data.type_chart.battleRules or require("tests.gen2_battle_rules_fixture")()
   for _, row in ipairs(CASES) do
     local id = "FX_" .. row[1]
     local user, target = Mon.new(data, "MEW", 30), Mon.new(data, "FIXMON_C", 30)
@@ -392,7 +393,6 @@ local function gen3Dispatch(data, version)
   Moves._rom, Moves._romLoaded = data.gen3Moves._rom, true
   local oldTypes, oldStats, oldSink = Pokemon._types, Pokemon._stats, Adapter.textSink
   Pokemon._types, Pokemon._stats = data.gen3Pokemon._types, data.gen3Pokemon._stats
-  -- The adapter's text sink avoids ROM dialogue assets; dispatch and mutations remain native.
   Adapter.textSink = function(id) return id end
   local function fresh(roll)
     local function mon()
@@ -451,7 +451,6 @@ local function gen3Dispatch(data, version)
   Moves._rom, Moves._romLoaded = oldRom, oldRomLoaded
   Pokemon._types, Pokemon._stats, Adapter.textSink = oldTypes, oldStats, oldSink
   T.check(ok, version .. " native dispatch completed: " .. tostring(reason))
-  -- Drain above drives the full native hit pipeline.
 end
 
 local originalVersion, originalPrefix = GameVersion.get(), CacheFs.prefix

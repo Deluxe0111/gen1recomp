@@ -1,4 +1,3 @@
--- Inherited battle contracts at native drawing, payment and decision boundaries.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -28,6 +27,7 @@ local HeldItems = require("src.core.game3.battle.held_items")
 local Ai = require("src.core.game3.battle.ai")
 local AiItems = require("src.core.game3.battle.ai_items")
 local Anim = require("src.core.game3.battle.anim")
+local PicCoords = require("src.core.game3.battle.pic_coords")
 local Link = require("src.core.game3.link")
 local LinkBattle = require("src.core.game3.link.battle")
 local Font = require("src.ui.game3.frlg_font")
@@ -52,7 +52,6 @@ local function copy(value)
   return out
 end
 
--- Neutral font/cache bytes and graphics capture; battle methods remain native.
 local function provideCache()
   local cache = Dataset.cache()
   local cacheRead, cacheExists = cache.read, cache.exists
@@ -118,7 +117,6 @@ local function input(key)
     isDown = function(_, edge) return key == edge end }
 end
 
--- One API 3 entry body uses the first-introduction argument names and returns.
 local BODY = [[
 local mod = ...
 local out = mod.exports
@@ -255,6 +253,10 @@ local function setup(version, double, trainer)
     fixture(BattleChrome, key, image)
   end
   fixture(BattleChrome, "_quads", {})
+  fixture(BattleChrome, "_terrains", setmetatable({}, { __index = function() return nil end }))
+  rawset(BattleChrome._terrains, require("src.core.game3.battle.bg").sheetKey(),
+    { image = images.sprite, postDexImage = images.sprite, w = 256, h = 256 })
+  fixture(PicCoords, "active", function() return { front = {}, back = {}, elev = {} } end)
   fixture(BattleChrome, "_doublesTried", true)
   fixture(BattleChrome, "_hpBoldTried", true)
   fixture(BattleChrome, "_hpBold", nil)
@@ -301,12 +303,12 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
       T.eq(imageCount(hidden, images.panel), 0, version .. " bottom hook suppresses actual panel")
       T.eq(imageCount(hidden, playerBox), imageCount(native, playerBox), version .. " bottom hook preserves healthbox")
       local selected
-      Ui.askYesNo("CHOICE", function(answer) selected = answer end)
+      Ui.askYesNo(function(answer) selected = answer end)
       Ui.handleInput(input("a"))
       T.eq(selected, true, version .. " hidden bottom retains native modal confirmation")
       remove()
       Ui._mode = "none"
-      local direct = capture(function() Healthbox.draw("player", st.player) end)
+      local direct = capture(function() Healthbox.draw(double and 0 or "player", st.player) end)
       T.check(imageCount(direct, playerBox) > 0, version .. " real Healthbox owner draws independently")
       if not double then
         Ui.markVoiceover("VOICE", { litHealthbox = true })
@@ -624,11 +626,30 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
     end
   end)
 
+  exercise(version, "native init failure releases battle state", function()
+    local _, game = setup(version)
+    local BattleBridge = require("src.core.game3.battle_bridge")
+    Battle.reset()
+    local failure
+    fixture(Battle, "start", function()
+      Battle._active, Battle._st = true, {}
+      error("native init exploded")
+    end)
+    local called, reason = pcall(BattleBridge.startWild, nil, game, { species = 16, level = 5, item = 0 },
+      { headless = true, failed = function(why) failure = why end })
+    T.eq(called, false, version .. " failed native start propagates with no mod")
+    T.check(tostring(reason):find("native init exploded", 1, true) ~= nil, version .. " failure reason preserved")
+    T.eq(Battle._active, false, version .. " failed start clears active battle")
+    T.eq(Battle._st, nil, version .. " failed start clears battle state")
+    T.eq(failure, nil, version .. " no failure callback without a mod hook")
+    T.eq(BattleBridge._finish, nil, version .. " failed start clears pending finish")
+  end)
+
   exercise(version, "link completion copies and once guard", function()
     local out, _, st, ad = setup(version)
     st.link = true
-    ad:damage(st.player, 7)
-    ad:damage(st.enemy, 60)
+    ad:applyHpLoss(st.player, 7)
+    ad:applyHpLoss(st.enemy, 60)
     LinkBattle._started, LinkBattle._offField, LinkBattle.state = true, true, "battle"
     LinkBattle.peer, LinkBattle.seat = { name = "BLUE", trainerId = 9 }, 0
     local seed, originalParty = Rng.getState(), copy(st.session.party)
@@ -663,7 +684,7 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
     LinkBattle.state, LinkBattle._started = "battle", true
     LinkBattle._offField = true
     local localParts = LinkBattle.hashParts(st)
-    ad:damage(st.player, 1)
+    ad:applyHpLoss(st.player, 1)
     local remoteParts = LinkBattle.hashParts(st)
     local component
     for _, key in ipairs(LinkBattle.HASH_PARTS) do
@@ -687,6 +708,38 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
     T.eq(#out.events, 1, version .. " repeated divergence does not notify twice")
   end)
 end
+
+exercise("firered", "no-mod start failure keeps the native completion flow", function()
+  local BattleBridge = require("src.core.game3.battle_bridge")
+  local _, game = setup("firered")
+  local results = {}
+  local real = Battle.start
+  Battle.start = function() return false, "refused" end
+  local started, why = BattleBridge.start(nil, game, { species = 16, level = 5 },
+    { headless = true, wild = true, done = function(r) results[#results + 1] = r end })
+  T.eq(started, nil, "failed start returns nil")
+  T.eq(why, "refused", "failed start returns the reason")
+  T.same(results, { "win" }, "failed start completes the caller with win")
+  Battle.start = function() error("boom") end
+  local ok = pcall(BattleBridge.start, nil, game, { species = 16, level = 5 },
+    { headless = true, wild = true, done = function(r) results[#results + 1] = r end })
+  Battle.start = real
+  T.eq(ok, false, "an error inside Battle.start propagates with no mod")
+  T.eq(#results, 1, "a propagated error does not complete the caller")
+end)
+
+exercise("firered", "caught marker is decided once per healthbox", function()
+  local _, game, st = setup("firered")
+  Ui._headless = false
+  Ui.openMenu()
+  local calls = 0
+  local real = Healthbox.shouldShowCaughtMarker
+  Healthbox.shouldShowCaughtMarker = function() calls = calls + 1; return calls > 1 end
+  for _ = 1, 3 do capture(function() Battle.draw(game) end) end
+  Healthbox.shouldShowCaughtMarker = real
+  T.eq(calls, 1, "marker evaluated once across frames")
+  T.check(st.enemy._caughtIcon ~= nil, "latch stored on the battler")
+end)
 
 Battle.reset()
 Choice.reset()

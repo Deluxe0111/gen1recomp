@@ -1,4 +1,3 @@
--- Shared API 3 storage contract and native FRLG playthrough lifecycle.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -63,7 +62,6 @@ local function filesystem()
   end
   fs.remove = function(path) files[path] = nil return true end
   fs.createDirectory = function() return true end
-  -- Both default save I/O and explicitly injected storage stay in this memfs.
   love.filesystem = fs
   SaveData.portableFs = function() return fs end
   SaveData.resetSlotState()
@@ -87,8 +85,6 @@ local function checkCall(fn, game, label)
 end
 
 local function run()
-  -- Identified save fixtures exercise this exact sandbox body on all eleven
-  -- versions; they do not claim to run those versions' native initialization.
   for _, version in ipairs(VERSIONS) do
     GameVersion.set(version)
     local fs = filesystem()
@@ -101,9 +97,6 @@ local function run()
     checkCall(api.isolated, second, version .. " shared playthrough isolation")
   end
 
-  -- Ruby/Sapphire/Emerald native New Game needs extracted contest winner,
-  -- town and Easy Chat initialization data absent from the SDK fixture.
-  -- Their API checks above are not native lifecycle coverage.
   for _, version in ipairs({ "firered", "leafgreen" }) do
     GameVersion.set(version)
     local fs, files = filesystem()
@@ -164,8 +157,6 @@ local function run()
       version .. " failed byte write retains data")
     checkCall(api.isolated, other, version .. " failed writes leave second bucket empty")
 
-    -- Use the production metadata stamp and save writer, with all persistence
-    -- routed to memfs above, then reconstruct the native Continue session.
     local snapshot = Schema.toSaveTable(first)
     snapshot.meta = SaveData.buildMeta(loader:status().loaded, snapshot.meta)
     first.meta = snapshot.meta
@@ -201,8 +192,6 @@ local function run()
       version .. " identified Continue never replaces authored identity")
     T.eq(authoredContinue.meta.cartId, "fixture_cart", version .. " Continue retains cart identity")
 
-    -- A legacy snapshot may acquire an identity through storage context; the
-    -- same metadata table must backfill the actual session without new-game init.
     local legacy = Schema.fromSaveTable(decoded)
     legacy.meta = {}
     local legacyGame = { save = Schema.toSaveTable(legacy) }

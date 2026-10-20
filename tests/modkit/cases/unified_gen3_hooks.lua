@@ -1,4 +1,3 @@
--- Inherited hooks exercised through the five native Game3 owners.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -50,7 +49,6 @@ local function fixture(owner, key, value)
   owner[key] = value
 end
 
--- These are font, graphics, asset and extracted-data boundaries only.
 fixture(Font, "draw", function(text, x, y)
   printed[#printed + 1] = { text = tostring(text), x = x, y = y }
 end)
@@ -110,7 +108,6 @@ fixture(cache, "read", function(self, path, ...)
   return cacheRead(self, path, ...)
 end)
 
--- Reach the production local draw routines without replacing their owners.
 local function native(owner, wanted)
   local visited = {}
   local function search(fn)
@@ -494,7 +491,6 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
       Field.lock("other-mod")
       TrainerSight.engagePair(game, a, b)
       local effect = FieldEffects._anims[#FieldEffects._anims]
-      -- Enter the captured native battle owner after presentation, without replacing it.
       local startBattle = native({ effect.onDone }, "startBattle")
       FieldEffects._anims = {}
       startBattle()

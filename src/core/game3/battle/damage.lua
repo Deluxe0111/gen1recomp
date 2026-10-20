@@ -6,6 +6,7 @@ local Moves = require("src.core.game3.battle.moves")
 local EffectIds = require("src.core.game3.battle.effect_ids")
 local rngWarned = false
 local ModRuntime = require("src.mods.Runtime")
+local ModBattle = require("src.core.game3.battle.mod_registries")
 
 local Damage = {}
 
@@ -262,6 +263,15 @@ function Damage.base(attacker, defender, move, opts)
 
   if tonumber(move.effect) == EffectIds.EXPLOSION then
     defense = math.floor(defense / 2)
+  end
+
+  if attacker.modStatus then
+    attack = ModBattle.penalty(attacker, "attack", attack)
+    spAttack = ModBattle.penalty(attacker, "spAtk", spAttack)
+  end
+  if defender.modStatus then
+    defense = ModBattle.penalty(defender, "defense", defense)
+    spDefense = ModBattle.penalty(defender, "spDef", spDefense)
   end
 
   local aStages = attacker.stages or {}

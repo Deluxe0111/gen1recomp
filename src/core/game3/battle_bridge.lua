@@ -265,7 +265,7 @@ local function writeback(session, battleParty, remap, result, save, opts)
   if opts.scriptedLoss then return end
 
   -- pret CB2_EndTrainerBattle EARLY_RIVAL + RIVAL_BATTLE_HEAL_AFTER:
-  -- heal and continue script — no white-out warp.
+  -- heal and continue script: no white-out warp.
   local flags = tonumber(opts.rivalFlags) or 0
   local healAfter = opts.noWhiteout
     or (opts.earlyRival and (flags % 2 == 1)) -- bit0 = RIVAL_BATTLE_HEAL_AFTER
@@ -333,7 +333,7 @@ end
 BattleBridge.EXTRA_KINDS = {
   "twoOpponents", "partner", "recordedLink", "frontier", "trainerHill", "kyogreGroudon", "regi",
   "groudon", "kyogre", "rayquaza", "trainerIdB",
-  "tutorialKind", "playerHalf", "partnerTrainerId", "partnerBackPic", "trainerItems",
+  "tutorialKind", "playerHalf", "partnerTrainerId", "partnerBackPic", "frontierPartner", "trainerItems",
   "battleTower", "secretBase", "dome", "palace", "arena", "factory", "pike", "pyramid", "frontierTrainer", "frontierTrainerB",
   "towerLinkMulti", "victoryTextB", "specialBattleKind",
 }
@@ -394,7 +394,6 @@ function BattleBridge.tvBattleEnd(session, result, resultState)
 end
 
 --- Start owned game3 battle (async). opts.done(result) when finished.
--- opts.cancel(reason) / opts.failed(reason) retire an unplayed trainer battle.
 -- opts.earlyRival / opts.rivalFlags / opts.noWhiteout: Oaks Lab tutorial loss.
 local function start_battle(mod, game, foe, opts, lifecycle)
   opts = opts or {}
@@ -715,9 +714,14 @@ local function start_battle(mod, game, foe, opts, lifecycle)
   end
 
   local failed = false
+  local lockedDefault = false
   local function fail(reason)
     if failed then return nil, reason end
     failed = true
+    if lockedDefault and not done then
+      local Field = package.loaded["src.core.game3.field"]
+      if Field and Field.unlock then Field.unlock() end
+    end
     if BattleBridge._finish == finish then
       BattleBridge._finish = nil
       BattleBridge._remap = nil
@@ -725,10 +729,14 @@ local function start_battle(mod, game, foe, opts, lifecycle)
     end
     if lifecycle then
       lifecycle.failed(reason)
-    elseif opts.failed and Runtime.getSession() == session then
-      opts.failed(reason)
+    elseif done then
+      done("win")
     end
     return nil, reason
+  end
+  local function guarded(fn, ...)
+    if lifecycle then return pcall(fn, ...) end
+    return true, fn(...)
   end
   local function doStart()
     if lifecycle and not lifecycle.valid() then
@@ -738,7 +746,12 @@ local function start_battle(mod, game, foe, opts, lifecycle)
     if lifecycle and lifecycle.started then return false end
     if lifecycle then lifecycle.started = true end
     local called, ok, err = pcall(Battle.start, startOpts)
-    if not called then return fail(ok) end
+    if not called then
+      Battle.reset()
+      if lifecycle then return fail(ok) end
+      BattleBridge._finish, BattleBridge._remap, BattleBridge._battleParty = nil, nil, nil
+      error(ok, 0)
+    end
     if not ok then return fail(err or "battle did not start") end
     return true
   end
@@ -754,7 +767,7 @@ local function start_battle(mod, game, foe, opts, lifecycle)
   local okT, BattleTransition = pcall(require, "src.core.game3.battle_transition")
   if okT and BattleTransition and BattleTransition.start then
     local Field = package.loaded["src.core.game3.field"] or require("src.core.game3.field")
-    if Field and Field.lock then Field.lock(lifecycle) end
+    if Field and Field.lock then Field.lock(lifecycle); lockedDefault = lifecycle == nil end
 
     local leadMon = battleParty and battleParty[1]
     local playerLv = leadMon and (leadMon.level or leadMon.lvl) or 5
@@ -783,7 +796,7 @@ local function start_battle(mod, game, foe, opts, lifecycle)
       pickOpts.flashLevel = session.flashLevel
       pickOpts.pyramid = opts.pyramid
     end
-    local picked, tid = pcall(BattleTransition.pick, pickOpts)
+    local picked, tid = guarded(BattleTransition.pick, pickOpts)
     if not picked then return fail(tid) end
     local function transitionDone()
       doStart()
@@ -793,9 +806,9 @@ local function start_battle(mod, game, foe, opts, lifecycle)
         if BattleTransition._doneCb == transitionDone then BattleTransition.abort() end
       end
     end
-    local called, ok, err = pcall(BattleTransition.start, tid, pickOpts, transitionDone)
+    local called, ok, err = guarded(BattleTransition.start, tid, pickOpts, transitionDone)
     if not called then return fail(ok) end
-    if ok == false or (ok == nil and err ~= nil) then
+    if lifecycle and (ok == false or (ok == nil and err ~= nil)) then
       return fail(err or "battle transition did not start")
     end
     return true
@@ -804,7 +817,7 @@ local function start_battle(mod, game, foe, opts, lifecycle)
   local okF, Fade = pcall(require, "src.ui.game3.fade")
   if okF and Fade and Fade.begin then
     local Field = package.loaded["src.core.game3.field"] or require("src.core.game3.field")
-    if Field and Field.lock then Field.lock(lifecycle) end
+    if Field and Field.lock then Field.lock(lifecycle); lockedDefault = lifecycle == nil end
     local function fadeDone()
       doStart()
     end
@@ -817,9 +830,9 @@ local function start_battle(mod, game, foe, opts, lifecycle)
         end
       end
     end
-    local called, ok = pcall(Fade.begin, Fade.MODE.TO_BLACK, 1, fadeDone)
+    local called, ok = guarded(Fade.begin, Fade.MODE.TO_BLACK, 1, fadeDone)
     if not called then return fail(ok) end
-    if ok == false then return fail("battle fade did not start") end
+    if lifecycle and ok == false then return fail("battle fade did not start") end
     return true
   end
   return doStart()

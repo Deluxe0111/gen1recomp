@@ -1,4 +1,3 @@
--- Inherited field contracts through native Game3 consumers and the API 3 loader.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -31,7 +30,6 @@ local function fixture(owner, key, value)
   owner[key] = value
 end
 
--- One entry chunk and the same callback bodies run on all five versions.
 local BODY = [[
 local mod = ...
 local out = mod.exports
@@ -559,8 +557,6 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
   end)
 end
 
--- Synthetic cache, graphics and loopback inputs exercise native consumers;
--- live ROM assets, Feebas tile geography and physical network timing remain external checks.
 ModRuntime.events, ModRuntime.hooks, ModRuntime.errors = savedRuntime[1], savedRuntime[2], savedRuntime[3]
 Version.set(originalVersion)
 Versions.select(originalNativeVersion)

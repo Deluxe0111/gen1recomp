@@ -2,6 +2,8 @@
 -- Owns the presented frame when Runtime is active: own canvas, own letterbox,
 -- own UI. Field map is composited under the UI; Gen2 Chrome/StartMenu are not used.
 
+local GameViewport = require("src.render.GameViewport")
+
 local Display = {}
 
 Display.W = 240
@@ -438,7 +440,6 @@ local function presentFlatHooks(game, canvas, winW, winH, worldActive)
 
   local zones = frameZones(game)
   local Renderer = require("src.render.Renderer")
-  -- The fallback has one native-sized surface containing both passes.
   local renderer = setmetatable({
     canvas = canvas, worldCanvas = canvas, worldActive = worldActive, uiOpaque = true,
   }, { __index = Renderer })
@@ -489,7 +490,7 @@ local function presentFlatHooks(game, canvas, winW, winH, worldActive)
     if hasOutput or presenting then
       present = Display._presentCanvas
       if not present or present:getWidth() ~= winW or present:getHeight() ~= winH then
-        present = G.newCanvas(winW, winH)
+        present = G.newCanvas(winW, winH, { dpiscale = dpiY })
         present:setFilter("linear", "linear")
         Display._presentCanvas = present
       end
@@ -538,9 +539,9 @@ local function presentFlatHooks(game, canvas, winW, winH, worldActive)
 end
 
 function Display.presentCanvas(game, canvas, winW, winH, worldActive)
+  if GameViewport.active() then GameViewport.setTarget() end
   if presentFlatHooks(game, canvas, winW, winH, worldActive) then return true end
 
-  -- Void bars + blit our frame (game3 letterbox, not Gen2 Playfield).
   love.graphics.setColor(0.02, 0.04, 0.08, 1)
   love.graphics.rectangle("fill", 0, 0, winW, winH)
   local scale, ox, oy, _, _, scaleY = Display.fit(winW, winH)

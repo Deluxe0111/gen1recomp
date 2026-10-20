@@ -1,4 +1,3 @@
--- Selected fishing arrays through the same API 3 mod and native consumers.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -49,7 +48,6 @@ local files = {
             if out.mode == "cdf" then changed[i].chance = i == 4 and 256 or 0 end
           end
         end
-        -- This is the original three-argument call, including on Gen 2.
         out.result = next(rod, map, changed)
         return out.result
       end)
@@ -160,7 +158,6 @@ local function fixture(version, f)
       self.world:goFishing(rod)
       local box = game.stack:top()
       T.check(box and box.auto ~= nil, version .. " real controller schedules its cast")
-      -- Read the encounter captured by the native dialogue continuation.
       for i = 1, 16 do
         local name, value = debug.getupvalue(box.onDone, i)
         if not name then break end
@@ -168,7 +165,6 @@ local function fixture(version, f)
       end
       T.eq(box.auto.delay, OW.fishAnimFrames(enc ~= nil), version .. " native bite timing")
     elseif self.generation == 2 then
-      -- World:rollFishing is the native FishFunction .TryFish implementation.
       game.save.pokedex = { seen = {}, caught = {} }
       outcome, enc = self.world:rollFishing(rod)
     else
@@ -319,8 +315,6 @@ local function scenario(version, f)
   end
 end
 
--- Route 119 Feebas tiles are not supplied here; native special-tile behavior
--- remains unverified by this fixture, rather than inferred from hook presence.
 for _, version in ipairs({ "red", "blue", "yellow", "gold", "silver", "crystal",
     "firered", "leafgreen", "ruby", "sapphire", "emerald" }) do
   local f = {}

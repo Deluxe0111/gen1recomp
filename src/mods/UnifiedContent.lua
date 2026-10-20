@@ -1,9 +1,5 @@
--- API 3 content boundary. Native accessors keep ownership, ordering,
--- rollback and freeze; no canonical records are stored outside their logs.
--- new(loader, mod, nativeContent) also accepts a dataset view as loader:
--- its generation/version are authoritative and its accessors stay read-only.
--- wrapDataset(view, mod) is the corresponding Loader integration helper.
 local Merge = require("src.mods.Merge")
+local Gen2ItemEffects = require("src.core.gen2.ItemEffects")
 local Schemas = require("src.mods.Schemas")
 local Ids = require("src.mods.UnifiedIds")
 local GameVersion = require("src.core.GameVersion")
@@ -16,6 +12,10 @@ local copy = Merge.deepCopy
 local CORE = { pokemon = true, moves = true, items = true,
   trainers = true, encounters = true }
 local VERBS = { "register", "override", "patch", "remove" }
+local PASSTHROUGH = { text = true, rom_text = true, field = true,
+  decorations = true, landmarks = true, battle_anims = true, constants = true,
+  icons = true, map_scripts = true, palettes = true, sprites = true,
+  balls = true, maps = true }
 local UNSUPPORTED = "unsupported: "
 
 local function refuse(reason) error(UNSUPPORTED .. reason, 0) end
@@ -63,8 +63,6 @@ local function equal(a, b)
   return true
 end
 
--- Validate arrays without allowing hash keys, holes or malformed wrappers to
--- disappear through ipairs. List rows are complete even in a patch.
 local function list(value, convert, wrappers)
   if value == DELETE then return DELETE end
   record(value)
@@ -123,13 +121,8 @@ function UnifiedContent.supports(name, generation, version)
   if Schemas.gatedFor(name, generation, version) then
     return false, UNSUPPORTED .. name .. " has no native target"
   end
-  -- Callback dispatch records have different native signatures; exposing
-  -- their names alone would promise an adapter this module cannot supply.
-  if name == "evolution_methods" and generation ~= 1 then
-    return false, UNSUPPORTED .. "native evolution method callbacks"
-  end
   if not CORE[name] and Schemas.hasShape(spec, generation) then
-    if name ~= "text" and name ~= "rom_text" then
+    if not PASSTHROUGH[name] then
       return false, UNSUPPORTED .. name .. " has no canonical record adapter"
     end
   end
@@ -238,9 +231,13 @@ local function evolutionWrite(row, generation)
   elseif method == "TRADE" or method == "FRIENDSHIP" then
     expect(row.level == nil and row.param == nil, "invalid evolution condition")
     if method == "FRIENDSHIP" then expect(row.item == nil, "invalid FRIENDSHIP item") end
-  elseif generation ~= 3 or not ({ LEVEL_SILCOON = true, LEVEL_CASCOON = true,
-      LEVEL_NINJASK = true, LEVEL_SHEDINJA = true, BEAUTY = true })[method] then
-    refuse("evolution method " .. method)
+  end
+  local native = method == "LEVEL" or method == "ITEM" or method == "TRADE" or method == "FRIENDSHIP"
+    or (generation == 3 and ({ LEVEL_SILCOON = true, LEVEL_CASCOON = true,
+      LEVEL_NINJASK = true, LEVEL_SHEDINJA = true, BEAUTY = true })[method] or false)
+  if not native then
+    if generation == 2 then out.species, out.into = nil, row.species end
+    return out
   end
   if generation == 2 then
     out.species, out.into = nil, row.species
@@ -261,10 +258,15 @@ end
 local function effectRead(value, generation, context)
   return Effects.read(value, generation, context)
 end
+local activeLoader
+local function registeredEffect(id)
+  local registry = activeLoader and activeLoader.content and activeLoader.content.move_effects
+  return registry ~= nil and registry:get(id) ~= nil
+end
 local function effectWrite(value, generation, context)
   if value == DELETE then return DELETE end
   expect(identifier(value), "move effect must be a string id")
-  local native, chance, reason = Effects.write(value, generation, context)
+  local native, chance, reason = Effects.write(value, generation, context, registeredEffect)
   if native == nil then refuse(reason or chance or ("move effect " .. value)) end
   return native, chance
 end
@@ -287,6 +289,9 @@ local function monRead(value, generation)
   if value.evolutions then
     out.evolutions = {}
     for i, row in ipairs(value.evolutions) do out.evolutions[i] = evolutionRead(row, generation) end
+  end
+  if generation == 3 and type(out.types) == "table" then
+    for i, id in ipairs(out.types) do out.types[i] = Ids.canonical(id, "type", 3) end
   end
   return out
 end
@@ -612,8 +617,6 @@ local function areaWrite(area, generation, grass, patch, old)
   return out
 end
 
--- Auxiliary Gen 2 tables use {kind, entries}; map records always use map
--- IDs. Metadata keys (source/generation) are never encounter IDs.
 local function extraEntries(value, kind, writing, patch)
   local function slot(row)
     if writing then return slotWrite(row, 2, kind) end
@@ -760,6 +763,7 @@ local function readCore(name, value, generation)
   if name == "moves" then
     local out = project(value, coreFields(name, MOVE_FIELDS, generation))
     out.effect = effectRead(value.effect, generation, value)
+    if generation == 3 then out.type = Ids.canonical(out.type, "type", 3) end
     if generation == 2 then out.secondaryChance = value.effectChance end
     if out.category == nil then
       local physical = fields("NORMAL FIGHTING FLYING POISON GROUND ROCK BUG GHOST STEEL")
@@ -857,8 +861,6 @@ local function checkDeletes(value, shape, path, generation)
   end
 end
 
--- Source text keeps placeholders symbolic and distinguishes all three
--- breaks. Never expand live names or discard native printer controls.
 local function textDialect(version)
   if version == "ruby" or version == "sapphire" then return "rs" end
   return GameVersion.layout(version) or TextIR.DEFAULT_DIALECT
@@ -927,9 +929,6 @@ local function textWrite(value, generation, version)
   return (source:gsub("\\([npl])", { n = "\n", p = "\f", l = "\v" }))
 end
 
--- Empty typed lists replace too. A preliminary patch clears only those
--- leaves, then the ordinary patch installs the empty list. Both operations
--- retain their owner so rollback never captures another mod's folded value.
 local function emptyLists(value, shape)
   if type(value) ~= "table" or value == DELETE or not shape then return nil end
   if shape.kind == "opt" then return emptyLists(value, shape.inner) end
@@ -1041,8 +1040,6 @@ local function gen3Index(loader, name, id, value, old)
   for other, row in registry:each() do
     if type(row) == "table" then reserve(row.index, other) end
   end
-  -- Keep removed staged slots reserved until their owning operations are
-  -- rolled back, so a later rollback cannot resurrect a collision.
   for other, ops in pairs(registry.ops or {}) do
     for _, op in ipairs(ops) do
       if type(op.value) == "table" then reserve(op.value.index, other) end
@@ -1082,6 +1079,12 @@ local function gen3References(loader, name, payload, currentId)
   if name == "pokemon" or name == "moves" then
     local validTypes = {}
     for _, id in pairs(Schemas.gen3View.TYPES) do validTypes[id] = true end
+    validTypes.PSYCHIC_TYPE, validTypes.CURSE_TYPE = true, true
+    local chart = loader.content and loader.content.type_chart
+    setmetatable(validTypes, { __index = function(_, id)
+      return type(id) == "string" and not id:find(">", 1, true)
+        and chart ~= nil and chart:get(id) ~= nil
+    end })
     if name == "moves" and payload.type and payload.type ~= DELETE and not validTypes[payload.type] then refuse("unknown Gen 3 type") end
     if payload.types and payload.types ~= DELETE then
       list(payload.types, function(id)
@@ -1092,6 +1095,8 @@ local function gen3References(loader, name, payload, currentId)
     if payload.growthRate and payload.growthRate ~= DELETE then
       local found = false
       for _, id in pairs(Schemas.gen3View.GROWTH) do if id == payload.growthRate then found = true end end
+      local curves = loader.content and loader.content.growth_rates
+      if curves and curves:get(payload.growthRate) ~= nil then found = true end
       if not found then refuse("unknown Gen 3 growth rate") end
     end
   end
@@ -1156,8 +1161,9 @@ local function accessor(loader, name, native, generation, version, mod)
       end
       for id in pairs(EXTRA_ENCOUNTERS) do if native:get(id) ~= nil then set[id] = true end end
     else
-      for id in native:each() do
-        if identifier(id) then
+      for nativeId in native:each() do
+        if identifier(nativeId) then
+          local id = nativeId
           if name == "pokemon" then id = Ids.canonical(id, "species", generation) end
           set[id] = true
         end
@@ -1246,8 +1252,6 @@ local function accessor(loader, name, native, generation, version, mod)
                 converted = part
               else converted = areaWrite(part, generation, kind == "grass" or kind == "swarmGrass", patch,
                 (native:get(kind) or {})[id]) end
-              -- Replacing a map must also replace, rather than merge, its
-              -- native row; the enclosing kind remains a shared namespace.
               if replacing and (native:get(kind) or {})[id] ~= nil then
                 prepare("patch", kind, { [id] = DELETE })
               end
@@ -1276,7 +1280,6 @@ local function accessor(loader, name, native, generation, version, mod)
         end
         prepare(mode, id, payload)
       end
-      -- All conversions and schema checks finish before the first op.
       for _, op in ipairs(prepared) do native[op[1]](native, op[2], op[3]) end
       return get(id)
     end
@@ -1291,8 +1294,6 @@ local function accessor(loader, name, native, generation, version, mod)
       local spec = Schemas.shapeFor(name, Schemas.REGISTRIES[name], generation)
       checkDeletes(payload, { kind = "rec", fields = spec.fields }, name, generation)
     end
-    -- Gen 2 has additional typed extractor fields not declared by the
-    -- legacy schema. Validate them here, then validate its declared fields.
     local schemaPayload = copy(payload)
     if generation == 2 and name == "moves" then
       if payload.effectChance ~= nil and payload.effectChance ~= DELETE then
@@ -1315,8 +1316,6 @@ local function accessor(loader, name, native, generation, version, mod)
     validate(name, id, schemaPayload, mode, generation)
     if generation == 3 and CORE[name] then gen3References(loader, name, payload, id) end
     if CORE[name] and value ~= DELETE then preserveExtensions(payload, value, name, generation) end
-    -- The legacy accessor validates once more. Check that final payload
-    -- before adding any preliminary list clears to its operation log.
     local nativeSpec = Schemas.shapeFor(name, Schemas.REGISTRIES[name], generation)
     local valid, detail = Schemas.check(nativeSpec, name, id, payload, mode)
     expect(valid, detail or "schema mismatch")
@@ -1348,15 +1347,19 @@ local function accessor(loader, name, native, generation, version, mod)
         native:patch(id, clear)
       end
     end
+    if generation == 2 and name == "item_effects" and type(payload) == "table" then
+      Gen2ItemEffects.markUnified(payload.use)
+    end
     native[mode](native, id, payload)
-    -- Native verbs return their logged payload. Returning it would expose
-    -- an alias into the op log even when get/each are detached.
     return get(id)
   end
   for _, mode in ipairs(VERBS) do
     if not native or native[mode] ~= nil then
       out[mode] = function(_, id, value)
+        local previousLoader = activeLoader
+        activeLoader = loader
         local ok, result, detail = pcall(mutate, mode, id, value)
+        activeLoader = previousLoader
         if ok then return result, detail end
         if type(result) == "string" and result:sub(1, #UNSUPPORTED) == UNSUPPORTED then
           return nil, result

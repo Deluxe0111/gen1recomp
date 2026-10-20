@@ -1,4 +1,3 @@
--- Gen 1 module facades backed by src/core/game3 for FRLG and API 3+ RSE mods.
 -- Contract mirrors src/mods/Gen2Compat.lua; docs/mod-api-gen3-compat.md.
 
 local Logger = require("src.core.Logger")
@@ -14,6 +13,7 @@ local lastGame = nil
 
 local built = {}
 local claimants = {}
+local modernClaims = {}
 local warned = {}
 
 local function warnOnce(key, fmt, ...)
@@ -656,11 +656,10 @@ local ITEMS_VIEW = namedView("items", itemRecord)
 local DATA_RENAMES = {
   encounters = "gen3Encounters", trainers = "gen3Trainers",
   text = "gen3Text", map_scripts = "gen3Scripts", scripts = "gen3Scripts",
+  palettes = "gen3Palettes", font = "gen3Font",
 }
 
 local DATA_UNBACKED = {
-  sprites = "FireRed's overworld sprites are baked by the extractor, not a "
-    .. "data.sprites registry",
   field = "FireRed's field rules are src/core/game3/collision.lua and the "
     .. "ROM's metatile behaviours, not a data.field record",
   constants = "no Gen 1 rule table exists on FireRed",
@@ -668,8 +667,6 @@ local DATA_UNBACKED = {
     .. "counterpart",
   trainer_headers = "the extractor's Gen 1 header table has no FireRed "
     .. "counterpart",
-  palettes = "FireRed palettes are baked into the extracted RGBA art",
-  icons = "FireRed icons are src/core/game3/pokemon.lua Pokemon.icon",
   battle_anims = "FireRed's battle animations are the pret script VM under "
     .. "src/core/game3/battle/anim_*",
   type_chart = "FireRed's type chart is src/core/game3/battle/types.lua",
@@ -897,6 +894,7 @@ COVERAGE["src.core.Game"] = {
   kind = "facade", target = "src.core.Game3",
   backed = "overworld data data.pokemon data.moves data.items data.maps "
     .. "data.encounters data.trainers data.text data.map_scripts data.tilesets "
+    .. "data.sprites data.palettes data.font "
     .. "save save.flags save.vars save.party save.money save.inventory "
     .. "save.player save.player.map save.player.x save.player.y "
     .. "save.player.facing save.player.rival save.pokedex save.options "
@@ -910,8 +908,8 @@ COVERAGE["src.core.Game"] = {
     .. "worldBgBattleDim worldBgBattleInStack fillScaleInStack "
     .. "wideBattleInStack uiAnchorsHeldInStack drawBaseInStack dynamicUI",
   warned = "stack renderer load bootConfig makeTitleState step restoreSave "
-    .. "linkNet linkSession data.sprites data.field data.constants "
-    .. "data.text_pointers data.trainer_headers data.palettes data.icons "
+    .. "linkNet linkSession data.field data.constants "
+    .. "data.text_pointers data.trainer_headers data.icons "
     .. "data.battle_anims data.type_chart save.boxes save.box "
     .. "save.objectToggles save.defeatedTrainers save.hiddenTaken",
   absent = "saveReport save.meta",
@@ -1595,10 +1593,21 @@ local function buildOverworld()
     if not raw then return nil, "unknown map: " .. tostring(mapId) end
     local W = g3("warp")
     local P = playerModule()
+    if modernClaims[OW] then
+      return W and W.request(nil, live(), raw, x, y,
+        facing or (P and P.facing) or "down",
+        { onDone = onDone, keepMusic = opts and opts.keepMusic,
+          arrive = opts and opts.arrive, fade = opts and opts.fade }) or nil
+    end
+    if onDone then
+      warnOnce("ow.startWarpTo.onDone",
+        "[%s] OverworldState.startWarpTo drops onDone on FireRed "
+        .. "(src/core/game3/warp.lua Warp.request has no completion callback)",
+        who(OW))
+    end
     return W and W.request(nil, live(), raw, x, y,
       facing or (P and P.facing) or "down",
-      { onDone = onDone, keepMusic = opts and opts.keepMusic,
-        arrive = opts and opts.arrive, fade = opts and opts.fade }) or nil
+      { teleport = opts and opts.arrive == "teleport" or nil }) or nil
   end
 
   function ow.canCollisionWarp()
@@ -1833,9 +1842,8 @@ COVERAGE[OW] = {
     update = "a replacement runs each field tick via Gen3Compat.worldTick",
     interact = "a replacement owns the A press; the original is Field.interact",
     talkTo = "a replacement returning true consumes a scripted NPC talk",
-    startWarpTo = "Warp.request with native fade defaults; forwards onDone, "
-      .. "keepMusic, arrive and fade; onDone runs at transition end before "
-      .. "optional arrival FX finish",
+    startWarpTo = "Warp.request with the FireRed fade; onDone is dropped for "
+      .. "API 1 and 2 mods; API 3 mods get onDone, keepMusic, arrive and fade",
     replaceBlock = "sets one 16px metatile (Field.setMetatile), not a 32px "
       .. "Gen 1 block",
     npcByIndex = "keyed by the FireRed localId the map's object template "
@@ -2356,12 +2364,28 @@ local function hookedIcon(species, mon, vanilla)
   return iconEntry(hooked) or vanilla
 end
 
+local function registryIcon(sp, iconOrig)
+  local g = live()
+  local icons = g and g.data and g.data.icons and g.data.icons.bySpecies
+  if type(icons) ~= "table" or next(icons) == nil then return nil end
+  local okName, name = pcall(Gen3Compat.speciesName, sp)
+  local def = okName and icons[name] or nil
+  if type(def) == "table" and type(def.image) == "string" then
+    return iconEntry(def.image)
+  end
+  if type(def) == "string" then
+    local borrowed = Gen3Compat.speciesId(def)
+    if borrowed and borrowed ~= sp then return iconOrig(borrowed) end
+  end
+  return nil
+end
+
 local function wrapIcons(P)
   local iconOrig, monIconOrig = P.icon, P.monIcon
   if iconOrig then
     P.icon = function(species)
-      local entry = iconOrig(species)
       local sp = tonumber(species)
+      local entry = sp and sp >= 1 and registryIcon(sp, iconOrig) or iconOrig(species)
       if sp and sp >= 1 then return hookedIcon(sp, nil, entry) end
       return entry
     end
@@ -2369,7 +2393,7 @@ local function wrapIcons(P)
   if iconOrig and monIconOrig and P.monPicSpecies then
     P.monIcon = function(mon)
       local sp = tonumber(P.monPicSpecies(mon))
-      local entry = iconOrig(sp)
+      local entry = sp and sp >= 1 and registryIcon(sp, iconOrig) or iconOrig(sp)
       if sp and sp >= 1 then return hookedIcon(sp, mon, entry) end
       return entry
     end
@@ -2495,6 +2519,11 @@ local function reapplyPokemon(P)
   reapply("pokemon", P, "species")
 end
 
+local function installStep(key, fn)
+  local ok, err = pcall(fn)
+  if not ok then warnOnce("applyMerged." .. key, "[gen3] %s not installed: %s", key, tostring(err)) end
+end
+
 function Gen3Compat.applyMerged(game)
   if game then lastGame = game end
   imageCache = {}
@@ -2507,8 +2536,67 @@ function Gen3Compat.applyMerged(game)
     Moves.onReload(reapplyMoves, "gen3compat")
   end
   collectOverrides(game or live())
+  installStep("mod registries", function()
+    rawRequire("src.core.game3.battle.mod_registries").bind(game and game.data or nil)
+  end)
+  local okC, Catching = pcall(rawRequire, "src.core.game3.battle.catching")
+  local okS, Schemas = pcall(rawRequire, "src.mods.Schemas")
+  if okC and okS then
+    installStep("mod balls", function()
+      Catching.installBalls(game and game.data and game.data.balls or nil, function(id)
+        return Schemas.gen3View.itemNum(game.data.gen3Items, id) or tonumber(id)
+      end)
+    end)
+  end
+  local data = game and game.data
+  local okF, family = pcall(function()
+    return rawRequire("src.core.game3.profile").family()
+  end)
+  local okL, errL = pcall(function()
+    rawRequire("src.core.game3.mod_landmarks").install(data and data.gen3Landmarks,
+      okF and family == "rse" and "rse" or "frlg")
+  end)
+  if not okL then
+    warnOnce("landmarks.install", "[gen3] mod landmarks not installed: %s", tostring(errL))
+  end
+  if okF and family == "rse" then
+    local okD, errD = pcall(function()
+      rawRequire("src.core.game3.mod_decorations").install(data and data.gen3Decorations)
+    end)
+    if not okD then
+      warnOnce("decorations.install", "[gen3] mod decorations not installed: %s", tostring(errD))
+    end
+  end
+  local okU, ItemUse = pcall(rawRequire, "src.core.game3.item_use")
+  if okU and type(ItemUse) == "table" then
+    installStep("item effects", function()
+      ItemUse.installEffects(game and game.data and game.data.item_effects, game)
+    end)
+  end
+  installStep("text tokens", function()
+    local TextIR = rawRequire("src.core.game3.scripting.text_ir")
+    TextIR.modTokens = game and game.data and next(game.data.tokens or {}) and game.data.tokens or nil
+    TextIR.modGame = game
+  end)
+  installStep("mod audio", function()
+    local ModAudio = rawRequire("src.core.game3.mod_audio")
+    ModAudio.install(game and game.data or nil)
+    if game then ModAudio.applyOptions(game.options) end
+  end)
+  installStep("palette mods", function()
+    rawRequire("src.core.game3.palette_mods").install(game and game.data or nil)
+  end)
+  local okFont, FrlgFont = pcall(rawRequire, "src.ui.game3.frlg_font")
+  if okFont and type(FrlgFont) == "table" and FrlgFont.setModFont then
+    installStep("mod font", function()
+      FrlgFont.setModFont(game and game.data and game.data.gen3Font or nil)
+    end)
+  end
+  local OwSprites = package.loaded["src.core.game3.ow_sprites"]
+  if OwSprites and OwSprites.invalidate then OwSprites.invalidate() end
   local okP, P = pcall(rawRequire, "src.core.game3.pokemon")
   if not (okP and P) then return end
+  if P.flushPicCaches then P.flushPicCaches() end
   wrapPics(P)
   seed(P)
   if type(P.onReload) == "function" and not reloadRegistered[P] then
@@ -2559,12 +2647,15 @@ local ADAPTERS = {
 Gen3Compat.ADAPTERS = ADAPTERS
 
 function Gen3Compat.endSession()
+  local bound = package.loaded["src.core.game3.battle.mod_registries"]
+  if bound then bound.bind(nil) end
   resolveGame, lastGame = nil, nil
   built, claimants, warned = {}, {}, {}
 end
 
 function Gen3Compat.bind(fn)
   resolveGame = fn
+  modernClaims = {}
 end
 
 function Gen3Compat.serves(name)
@@ -2598,7 +2689,7 @@ function Gen3Compat.memberStatus(name, member)
   return row and row.members[member] or nil
 end
 
-function Gen3Compat.resolve(name, modId)
+function Gen3Compat.resolve(name, modId, apiVersion)
   local spec = ADAPTERS[name]
   if not spec then return nil end
   local module = built[name]
@@ -2607,6 +2698,7 @@ function Gen3Compat.resolve(name, modId)
     built[name] = module
   end
   if modId then
+    if (tonumber(apiVersion) or 0) >= 3 then modernClaims[name] = true end
     local ids = claimants[name]
     if not ids then ids = {} claimants[name] = ids end
     local seen = false

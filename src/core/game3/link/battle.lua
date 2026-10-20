@@ -885,7 +885,8 @@ function LB.desync(turn, component, seat)
   if component == "state" then
     localHash, remoteHash = LB._myHashes[turn], remote and remote.value
   end
-  if localHash ~= nil and remoteHash ~= nil and localHash ~= remoteHash then
+  if localHash ~= nil and remoteHash ~= nil and localHash ~= remoteHash
+      and ModRuntime.wants("link.desync") then
     ModRuntime.emit("link.desync", {
       turn = turn, component = component, localHash = localHash, remoteHash = remoteHash,
       fatal = true, seat = seat,

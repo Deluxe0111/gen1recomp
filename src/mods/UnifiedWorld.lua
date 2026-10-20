@@ -1,5 +1,3 @@
--- API 3 world boundary. Native maps, objects and script rows remain native
--- escape hatches; party() is the detached UnifiedRecords.mon read path.
 local UnifiedWorld = {}
 local unpack = table.unpack or unpack
 
@@ -80,7 +78,6 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
   end
 
   local function metadata()
-    -- Coordinates are zero-based native blocks, never collision behaviours.
     return { tileSize = generation == 3 and 16 or 32, cellSize = 16,
       coordinateBase = 0, kind = generation == 3 and "metatile" or "block" }
   end
@@ -111,7 +108,6 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
       local top = stack:top()
       if generation == 1 and top ~= ow then return nil, "world is busy" end
       if generation == 2 and top and top ~= ow then
-        -- Gen 2's World is a service, and its free-roam stack is empty.
         return nil, "world is busy"
       end
     end
@@ -248,7 +244,7 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
         end
       end
     end
-    local called, result, detail = pcall(api.warpTo, api, mapId, x, y, facing, opts)
+    local called, result, detail = pcall(api._warpToWith or api.warpTo, api, mapId, x, y, facing, opts)
     accepted = called and result ~= nil and result ~= false
     if not accepted then
       if retire then retire() else completed = true end
@@ -300,9 +296,6 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
     return id, metadata()
   end
 
-  -- mod:<key> is private to this mod. The explicit mod.<id>.<key> spelling
-  -- is also accepted, but cannot access another mod's bucket. These flags
-  -- persist in save.modData[modId].worldFlags, never in native bitfields.
   local function flagId(name)
     if type(name) == "string" then
       local key = name:match("^mod:(.+)$")
@@ -341,7 +334,6 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
       local id = type(name) == "number" and name
         or (type(name) == "string" and flags.IDS[name])
       if integer(id, 1, (flags.FLAGS_COUNT or 0x900) - 1) then
-        -- IDS also includes variables; only named flags are symbolic flags.
         if type(name) == "number" or (flags.NAMES and flags.NAMES[id]) then
           return id, "native"
         end

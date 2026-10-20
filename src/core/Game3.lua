@@ -9,6 +9,7 @@ end
 
 local FixedStep = require("src.core.FixedStep")
 local Input = require("src.core.Input")
+local GameViewport = require("src.render.GameViewport")
 local SaveData = require("src.core.SaveData")
 local Schema = require("src.core.game3.save_schema_firered")
 local MapIds = require("src.core.game3.map_ids")
@@ -761,6 +762,7 @@ function Game3:update(dt)
   self._frameSpeed = speed
   FixedStep.maxAccum = FixedStep.catchupLimit(speed, dt)
   FixedStep:update(dt, speed)
+  lazyReq("src.render.Pipelines").update(dt)
   self._audioAccum = (self._audioAccum or 0) + dt
   local STEP = 1 / 60
   local guard = 0
@@ -820,14 +822,9 @@ function Game3:_drawHud(w, h)
   love.graphics.pop()
 end
 
-function Game3:draw()
-  local w = love.graphics.getWidth()
-  local h = love.graphics.getHeight()
-
+function Game3:_drawFrame(w, h)
   if self.phase == "arena" then
     if self.arena then self.arena:draw(w, h) end
-    self:_drawHud(w, h)
-    if self.touchControls then self.touchControls:draw() end
     return
   end
 
@@ -848,34 +845,35 @@ function Game3:draw()
         love.graphics.pop()
         Display.presentCanvas(self, canvas, w, h, false)
       else
+        GameViewport.setTarget()
         drawBootFrame()
       end
-    end
-    self:_drawHud(w, h)
-    if self.touchControls then
-      self.touchControls:draw()
     end
     return
   end
 
   if Runtime.isActive() then
     if Display.present(self, w, h) then
-      self:_drawHud(w, h)
-      if self.touchControls then
-        self.touchControls:draw()
-      end
       return
     end
   end
 
+  GameViewport.setTarget()
   love.graphics.clear(0.05, 0.05, 0.12)
   love.graphics.setColor(0.4, 0.8, 0.4)
   local map = self.session and self.session.map or "?"
   love.graphics.printf("Fire Red field: " .. tostring(map), 0, h * 0.45, w, "center")
+end
+
+function Game3:draw()
+  GameViewport.begin(3)
+  local w, h = GameViewport.dimensions()
+  GameViewport.setTarget()
+  self:_drawFrame(w, h)
   self:_drawHud(w, h)
-  if self.touchControls then
-    self.touchControls:draw()
-  end
+  GameViewport.finish(self)
+  -- Touch controls belong to the full OS window, outside the game viewport.
+  if self.touchControls then self.touchControls:draw() end
 end
 
 function Game3:_hotkey(key)
@@ -1136,7 +1134,6 @@ end
 function Game3:textinput() end
 function Game3:filedropped() end
 
--- Window coordinates stay intact; game coordinates follow the shared viewport.
 function Game3:pointerEvent(phase, source, id, x, y, dx, dy, pressure, button)
   local gameX, gameY, insideGame = GameViewport.toLocal(x, y)
   return ModRuntime.call("input.pointer", pointerUnclaimed, self, {

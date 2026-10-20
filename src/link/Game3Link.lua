@@ -296,7 +296,7 @@ function Game3Link:_finish(state, reason)
   self.state = state
   self.reason = reason
   self._session:close()
-  Runtime.emit("link.ended", { reason = reason })
+  if Runtime.wants("link.ended") then Runtime.emit("link.ended", { reason = reason }) end
   local cb = self.onClosed
   if cb then cb(reason, state) end
   return true
@@ -528,11 +528,13 @@ function Game3Link:update(dt)
         local peer = self.peerHello
         local mode = Game3Link.BATTLE_TYPES[self.linkType] and "battle"
           or (Game3Link.TRADE_TYPES[self.linkType] and "trade" or peer.mode)
-        Runtime.emit("link.connected", {
-          role = self.role,
-          remote = { name = peer.name, mode = mode,
-                     mods = peer.mods, fingerprint = peer.fingerprint },
-        })
+        if Runtime.wants("link.connected") then
+          Runtime.emit("link.connected", {
+            role = self.role,
+            remote = { name = peer.name, mode = mode,
+                       mods = peer.mods, fingerprint = peer.fingerprint },
+          })
+        end
         if self.closed or self.state ~= "handshake" then return self.state end
       end
       if verdict == "full" then

@@ -5,6 +5,7 @@ local Versions = require("src.import.gba.versions")
 local ModRuntime = require("src.mods.Runtime")
 local CacheBlob = require("src.import.CacheBlob")
 local Strings = require("src.core.Strings")
+local PaletteMods = require("src.core.game3.palette_mods")
 
 local Pokemon = {}
 
@@ -352,7 +353,7 @@ end
 --- ROM BaseStats.growthRate: pret GROWTH_* index into gExperienceTables.
 function Pokemon.growthRate(species)
   local meta = Pokemon.speciesMeta(species)
-  return (meta and tonumber(meta.growthRate) or 0) % 6
+  return require("src.core.game3.progression").growthKey(meta and tonumber(meta.growthRate) or 0)
 end
 
 -- Gen3 genderRatio specials (match pret constants/pokemon.h).
@@ -1007,6 +1008,17 @@ Pokemon.VITAMIN_FRIENDSHIP_CHANGE = { 5, 3, 2 }
 -- pokefirered/src/data/pokemon/item_effects.h:225 STAT_BOOST_FRIENDSHIP_CHANGE
 Pokemon.STAT_BOOST_FRIENDSHIP_CHANGE = { 1, 1, 0 }
 
+local function recalc_after_ev(mon)
+  -- pokefirered/src/pokemon.c:2155
+  local oldMaxHp = tonumber(mon.maxHp) or 0
+  local oldHp = tonumber(mon.hp) or 0
+  Pokemon.applyStats(mon)
+  local newMaxHp = tonumber(mon.maxHp) or oldMaxHp
+  if oldHp ~= 0 or oldMaxHp ~= 0 then
+    mon.hp = math.max(0, math.min(newMaxHp, oldHp + (newMaxHp - oldMaxHp)))
+  end
+end
+
 -- pokefirered/src/pokemon.c:4229
 function Pokemon.raiseEvFromItem(mon, statKey, amount)
   local evs = Pokemon.evsOf(mon)
@@ -1024,15 +1036,19 @@ function Pokemon.raiseEvFromItem(mon, statKey, amount)
     delta = Pokemon.MAX_TOTAL_EVS - evCount
   end
   evs[statKey] = data + delta
-  -- pokefirered/src/pokemon.c:2155
-  local oldMaxHp = tonumber(mon.maxHp) or 0
-  local oldHp = tonumber(mon.hp) or 0
-  Pokemon.applyStats(mon)
-  local newMaxHp = tonumber(mon.maxHp) or oldMaxHp
-  if oldHp ~= 0 or oldMaxHp ~= 0 then
-    mon.hp = math.max(0, math.min(newMaxHp, oldHp + (newMaxHp - oldMaxHp)))
-  end
+  recalc_after_ev(mon)
   return delta
+end
+
+-- pokeemerald/src/pokemon.c:4990
+function Pokemon.lowerEvFromItem(mon, statKey, amount)
+  local evs = Pokemon.evsOf(mon)
+  local data = tonumber(evs[statKey]) or 0
+  if data == 0 then return 0 end
+  local new = math.max(0, data + math.floor(tonumber(amount) or 0))
+  evs[statKey] = new
+  recalc_after_ev(mon)
+  return data - new
 end
 
 -- The ROM's English name for a move or ability number, whatever a mod renamed
@@ -1618,6 +1634,7 @@ function Pokemon.icon(species)
   local h = (Pokemon._manifest and Pokemon._manifest.iconH) or Versions.MON_ICON_H or 32
   local rgba = read_rgba(species)
   if not rgba then return nil end
+  rgba = PaletteMods.recolourIcon(rgba, species)
   local actualH = (#rgba >= w * (h * 2) * 4) and (h * 2) or h
   local image = image_from_rgba(rgba, w, actualH)
   if not image then return nil end
@@ -1683,6 +1700,15 @@ local function pic_entry(store, key, rgba, cap)
   return entry
 end
 
+function Pokemon.flushPicCaches()
+  for _, store in ipairs({ Pokemon._front or {}, Pokemon._back or {}, Pokemon._spindaPics or {} }) do
+    for k, v in pairs(store) do
+      if type(v) == "table" and v.lru then store[k] = nil end
+    end
+  end
+  Pokemon._icons = {}
+end
+
 function Pokemon.picCacheSize(store)
   local n = 0
   for _, v in pairs(store or {}) do if type(v) == "table" and v.lru then n = n + 1 end end
@@ -1708,6 +1734,7 @@ local function pic(store, kind, species, form, shiny)
     store[key] = false
     return nil
   end
+  rgba = PaletteMods.recolourPic(rgba, species, kind:find("_shiny", 1, true) ~= nil)
   return pic_entry(store, key, rgba)
 end
 
@@ -1804,7 +1831,9 @@ local function spinda_pic(personality, shiny)
   local key = (shiny and "spinda_shiny:" or "spinda:") .. p
   Pokemon._spindaPics = Pokemon._spindaPics or {}
   if Pokemon._spindaPics[key] then return pic_touch(Pokemon._spindaPics[key]) end
-  return pic_entry(Pokemon._spindaPics, key, spinda_rgba(p, shiny), Pokemon.SPINDA_CAP)
+  local rgba = spinda_rgba(p, shiny)
+  rgba = rgba and PaletteMods.recolourPic(rgba, SPECIES_SPINDA, shiny)
+  return pic_entry(Pokemon._spindaPics, key, rgba, Pokemon.SPINDA_CAP)
 end
 
 -- pokefirered/src/battle_gfx_sfx_util.c:354

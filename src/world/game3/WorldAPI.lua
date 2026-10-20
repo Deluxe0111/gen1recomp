@@ -328,6 +328,13 @@ function WorldAPI:mapOverview()
 end
 
 function WorldAPI:warpTo(mapId, x, y, facing, opts)
+  local legacy = {}
+  if opts and opts.arrive == "teleport" then legacy.teleport = true end
+  if opts and opts.fade == false then legacy.fade = false end
+  return self:_warpToWith(mapId, x, y, facing, nil, legacy)
+end
+
+function WorldAPI:_warpToWith(mapId, x, y, facing, opts, legacy)
   if not self:_field() then return nil, NO_OVERWORLD end
   local raw = Gen3Compat.gen3MapId(mapId)
   if not raw then return nil, "unknown map: " .. tostring(mapId) end
@@ -335,7 +342,7 @@ function WorldAPI:warpTo(mapId, x, y, facing, opts)
   local W = g3("warp")
   if not W then return nil, NO_OVERWORLD end
   local P = loaded("player")
-  local warpOpts = {
+  local warpOpts = legacy or {
     onDone = opts and opts.onDone,
     keepMusic = opts and opts.keepMusic,
     arrive = opts and opts.arrive,

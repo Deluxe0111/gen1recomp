@@ -1,4 +1,3 @@
--- API 3 callback boundaries and menu selection through real Loader buses.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -8,7 +7,13 @@ local GameVersion = require("src.core.GameVersion")
 local Merge = require("src.mods.Merge")
 local Records = require("src.mods.UnifiedRecords")
 local Callbacks = require("src.mods.UnifiedCallbacks")
+local CallSites = require("tests.modkit.callback_sites").scan("src")
 
+local GEN2_ONLY = {}
+for name in ([[intro.boot.copyright intro.boot.gamefreak intro.boot.title intro.boot.movie
+  intro.boot.movie_ended clock.day_changed phone.call_received radio.channel mail.written
+  mail.read unown.unlocked apricorn.converted bug_contest.scored phone.contact_list
+  ]]):gmatch("%S+") do GEN2_ONLY[name] = true end
 local function pack(...) return { n = select("#", ...), ... } end
 local originalVersion = GameVersion.get()
 local VERSIONS = { "red", "blue", "yellow", "gold", "silver", "crystal",
@@ -29,7 +34,8 @@ local CATALOG = {
       intro.oak_speech.started intro.oak_speech.step intro.oak_speech.answered
       intro.oak_speech.finished world.live_maps_preparing world.live_maps_updated
       world.tod_changed link.connected link.ended link.battle_ended link.desync
-      pokemon.received trade.completed script.started script.ended]],
+      pokemon.received trade.completed script.started script.ended
+      mod.options_changed]],
     [[intro.boot.copyright intro.boot.gamefreak intro.boot.title intro.boot.movie
       intro.boot.movie_ended clock.day_changed phone.call_received radio.channel
       breeding.egg_created egg.hatched happiness.changed pokerus.infected
@@ -53,7 +59,8 @@ local CATALOG = {
       intro.oak_speech.build battle.status_hud_visible battle.move_grid_navigation
       battle.overlay battle.exp_award battle.bottom_ui_visible battle.catch_exp
       trainer.before_battle battle.caught_marker_visible battle.menu_auxiliary
-      battle.field_residual pokemon.level_visible]],
+      battle.field_residual pokemon.level_visible battle.style catch.nickname
+      catch.party_full transition.style]],
     [[shiny.roll gender.roll held_item.trigger breeding.compatibility phone.contact_list
       battle.enemy_switch_or_item]],
   },
@@ -68,8 +75,6 @@ for _, surface in ipairs({ "events", "hooks" }) do
   end
 end
 
--- Identical subscriptions run on all versions, including names introduced later.
--- Manual bus dispatch below tests the namespace and boundary, not native wiring.
 local REGISTRATION = table.concat(catalogSource, "\n") .. "\n" .. [[
 local mod = ...
 local out = mod.exports
@@ -175,7 +180,6 @@ local function load(files, generation, version)
   return loader, ok and result
 end
 
--- This same sandboxed body runs unchanged on every version.
 local COMMON = [[
 local mod = ...
 local out = mod.exports
@@ -525,8 +529,10 @@ for _, version in ipairs(VERSIONS) do
       for name, introduction in pairs(names) do
         local entry = out.catalog[surface][name]
         T.check(entry ~= nil, version .. " registers " .. surface .. " " .. name)
-        T.eq(entry and entry.supported, generation >= introduction,
-          version .. " introduction capability " .. name)
+        local expected = CallSites[surface][name] ~= nil and CallSites[surface][name][generation] == true
+        if GEN2_ONLY[name] then expected = generation == 2 end
+        T.eq(entry and entry.supported, expected,
+          version .. " native capability " .. name)
         local subscriptions = bus[name] or {}
         T.eq(#subscriptions, surface == "hooks" and 1 or name == "mods.loaded" and 1 or 2,
           version .. " native bus subscription keys " .. name)
@@ -593,7 +599,6 @@ for _, version in ipairs(VERSIONS) do
   T.sdk.restoreRuntime()
 end
 
--- Failed entry chunks must retire their adapted event and hook closures.
 for _, version in ipairs(VERSIONS) do
   local files = filesFor()
   addMod(files, "z_failure", 3, REGISTRATION .. [[
@@ -622,7 +627,6 @@ for _, version in ipairs(VERSIONS) do
   T.sdk.restoreRuntime()
 end
 
--- Real StartMenu.show/confirm; only the ROM label lookup is supplied locally.
 do
   local loader, result = load(filesFor(), 3, "firered")
   T.eq(result, true, "menu fixture loads")
@@ -704,7 +708,6 @@ do
   T.sdk.restoreRuntime()
 end
 
--- Repeated legacy name views keep enough metadata to round-trip native IDs.
 do
   GameVersion.set("firered")
   local Compat = require("src.mods.Gen3Compat")
@@ -759,7 +762,6 @@ do
   end
 end
 
--- A legacy constructor patch must reach Gold once and retain its callback arity.
 do
   GameVersion.set("gold")
   local Compat = require("src.mods.Gen2Compat")
@@ -802,7 +804,6 @@ do
   Compat.bind(nil)
 end
 
--- The same hook path remains a direct native pass-through without mods.
 do
   local loader, result = load({}, 3, "firered")
   T.eq(result, true, "no-mod callback fixture loads")

@@ -15,8 +15,6 @@ function Hooks.new()
   return setmetatable({ chains = {}, ownerEpochs = {} }, Hooks)
 end
 
--- An individual unsubscribe preserves retained continuations; removing an owner
--- advances its lifetime so native async work can retire without a stale callback.
 function Hooks:ownerEpoch(owner)
   return owner ~= nil and self.ownerEpochs and self.ownerEpochs[owner] or 0
 end

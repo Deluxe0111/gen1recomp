@@ -148,7 +148,6 @@ local function runStepAndRecord(adapter, battler, phase, fn, events, fieldResidu
       end
       if adapter:isFainted(b) and before > 0 then
         if terminalPlayer and b.side == "enemy" then
-          -- Doubles awards EXP before checking the result; this batch belongs to the player faint.
           b._expGiven = true
         else
           faints[#faints + 1] = { side = b.side, battler = b.id }

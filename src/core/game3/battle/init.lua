@@ -844,7 +844,14 @@ function Battle.start(opts)
     -- pokeemerald/src/battle_controller_wally.c:1035
     st.backPicOverride = battleProfile.backPics and battleProfile.backPics.wally
   end
-  if st.kinds.partner and st.playerHalf then
+  local fp = type(opts.frontierPartner) == "table" and opts.frontierPartner or nil
+  if st.kinds.partner and st.playerHalf and fp then
+    -- pokeemerald/src/battle_message.c:2725
+    st.partner = {
+      trainerId = fp.trainerId, name = fp.name, class = tonumber(fp.class), className = fp.className,
+      frontPic = fp.pic, playerFrontPic = fp.playerPic,
+    }
+  elseif st.kinds.partner and st.playerHalf then
     -- pokeemerald/src/battle_message.c:2725
     local pinfo = opts.partnerTrainerId and Trainers.info(opts.partnerTrainerId) or {}
     st.partner = {
@@ -864,7 +871,7 @@ function Battle.start(opts)
       or (trainerInfo and trainerInfo.aiFlags)
       or 0
   else
-    -- pret gTrainers[].aiFlags / items[4] — drive battle AI scripts + item use.
+    -- pret gTrainers[].aiFlags / items[4]: drive battle AI scripts + item use.
     st.aiFlags = opts.aiFlags
       or (st.safari and 0x40000000)
       or (st.roamer and 0x20000000)
@@ -876,6 +883,8 @@ function Battle.start(opts)
   st.trainerItems = opts.trainerItems
     or (trainerInfo and trainerInfo.items)
     or { 0, 0, 0, 0 }
+  st.aiClass = opts.aiClass or (trainerInfo and trainerInfo.aiClass)
+  st.aiMods = opts.aiMods or (trainerInfo and trainerInfo.aiMods)
   st.playerGender = playerGender
   st.overworldWeather = (not st.link) and (opts.overworldWeather or overworld_weather()) or nil
   do
@@ -1957,9 +1966,11 @@ local function push_awards_headless(awards)
       local name = entry.battler and State.displayName(entry.battler)
         or Pokemon.displayMonName(entry.mon)
       -- pokefirered/src/battle_script_commands.c:3265
-      Ui.push(BattleText.get("STRINGID_PKMNGAINEDEXP", { buff1 = name,
-        buff2 = BattleText.get(entry.boosted and "STRINGID_ABOOSTED" or "STRINGID_EMPTYSTRING4"),
-        buff3 = tostring(r.gained) }))
+      if entry.announce ~= false then
+        Ui.push(BattleText.get("STRINGID_PKMNGAINEDEXP", { buff1 = name,
+          buff2 = BattleText.get(entry.boosted and "STRINGID_ABOOSTED" or "STRINGID_EMPTYSTRING4"),
+          buff3 = tostring(r.gained) }))
+      end
       for _, lv in ipairs(r.levels or {}) do
         -- pokefirered/src/battle_script_commands.c:3307
         Ui.push(BattleText.get("STRINGID_PKMNGREWTOLV", { buff1 = name, buff2 = tostring(lv) }))

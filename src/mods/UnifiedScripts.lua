@@ -1,4 +1,3 @@
--- Portable script rows use the selected world's native services and lifetime.
 local UnifiedScripts = {}
 local unpack = table.unpack or unpack
 local ALIASES = { text = "show_text", setflag = "set_flag", clearflag = "clear_flag" }
@@ -17,6 +16,20 @@ local ARITY = {
   open_mart = 2, static_battle = 4, remember_outdoor = 4,
   play_once = 2, text_sound = 2, wait_sound = 1, engage_music = 2,
   fade_music = 2, play_default_music = 1,
+}
+local ADAPTED = {
+  emote = { 4, [2] = true, [3] = true },
+  fade = { 3, [2] = true, [3] = true },
+  walk_npc = { 4, [2] = true, [3] = true },
+  text_opts = { 2, [2] = true, [3] = true },
+  pan_camera = { 4, [3] = true },
+  push_screen = { 3, [2] = true, [3] = true },
+  trade = { 3, [2] = true, [3] = true },
+  march_in_place = { 3, [3] = true },
+}
+local BUBBLES = {
+  [2] = { shock = 0, question = 1, happy = 2 },
+  [3] = { shock = "exclamation", question = "question", happy = "smile" },
 }
 
 local function pack(...) return { n = select("#", ...), ... } end
@@ -169,9 +182,10 @@ function UnifiedScripts.new(env)
       local verb = ALIASES[row[1]] or row[1]
       row[1] = verb
       local fn, meta, custom = command(game, verb)
-      expect(ARITY[verb] or fn, (req("src.script.Commands")[verb]
+      local adapted = generation ~= 1 and ADAPTED[verb] and ADAPTED[verb][generation] and ADAPTED[verb]
+      expect(ARITY[verb] or adapted or fn, (req("src.script.Commands")[verb]
         and "native content adapter unavailable: " or "unsupported script command: ") .. verb)
-      local limit = custom and 64 or ARITY[verb] or 64
+      local limit = custom and 64 or ARITY[verb] or adapted and adapted[1] or 64
       for key in pairs(row) do
         expect(integer(key, 1, limit), "invalid script row option: " .. verb)
       end
@@ -182,7 +196,6 @@ function UnifiedScripts.new(env)
         expect(name(a) and labels[a] == nil, "invalid or duplicate script label: " .. tostring(a))
         labels[a] = i
       elseif custom then
-        -- Custom handlers validate their own argument vocabulary at dispatch.
       elseif verb == "warp" then
         local ok, err = env.warpArgs(game, a, b, c, d)
         expect(ok, err)
@@ -333,6 +346,66 @@ function UnifiedScripts.new(env)
             or verb == "engage_music") and audio.songs or audio.sfx)
           expect(rows and rows[a], "native audio unavailable: " .. tostring(a))
         end
+      elseif adapted then
+        if verb == "emote" then
+          expect(a == "player" or (name(a) or integer(a, 0)) and (warped or entity(ow, a)),
+            "native emote target unavailable")
+          expect(BUBBLES[generation][b] ~= nil, "invalid emote bubble")
+          expect(c == nil or integer(c, 1, 3600), "invalid emote frames")
+        elseif verb == "fade" then
+          expect(a == "out" or a == "in", "invalid fade direction")
+          expect(b == nil or b == "black" or b == "white", "invalid fade color")
+        elseif verb == "walk_npc" then
+          expect(a == "player" or (name(a) or integer(a, 0)) and (warped or entity(ow, a)),
+            "native NPC unavailable")
+          expect(type(b) == "table" and #b <= 1024, "invalid script movement")
+          for key, dir in pairs(b) do
+            expect(integer(key, 1, #b) and DIRS[dir], "invalid script movement")
+          end
+          expect(c == nil or type(c) == "table", "invalid walk options")
+          for key, value in pairs(c or {}) do
+            expect(key == "wait" and type(value) == "boolean", "invalid walk option")
+          end
+        elseif verb == "text_opts" then
+          expect(type(a) == "table" and a.auto == true, "invalid text options")
+          for key in pairs(a) do expect(key == "auto", "native text option unavailable: " .. tostring(key)) end
+        elseif verb == "pan_camera" then
+          if a == "reset" then expect(b == nil and c == nil, "invalid camera reset")
+          else
+            expect(integer(a, -64, 64) and integer(b, -64, 64) and c == nil, "invalid camera pan")
+          end
+          expect(type(g3("camera_object").spawn) == "function", "native camera adapter unavailable")
+        elseif verb == "push_screen" then
+          expect(name(a), "invalid screen")
+          expect(b == nil or type(b) == "table", "invalid screen arguments")
+          if generation == 3 then
+            expect(game.data.screens and game.data.screens[a], "native screen unavailable: " .. tostring(a))
+            expect(type(req("src.ui.game3.mod_ui").push) == "function", "native screen adapter unavailable")
+          else
+            expect(game.data.screens and game.data.screens[a] or pcall(req("src.ui.Screens").get, game, a),
+              "native screen unavailable: " .. tostring(a))
+          end
+        elseif verb == "trade" then
+          expect(integer(a, 0) and b == nil, "invalid native trade")
+          if generation == 3 then
+            local ok, entry = pcall(function() return g3("scripting.natives_trade").entry(a) end)
+            expect(ok and entry, "native trade unavailable: " .. tostring(a))
+            expect(type(g3("trade_scene").play) == "function", "native trade adapter unavailable")
+          else
+            expect(type(ow.openNpcTrade) == "function"
+              and pcall(req("src.ui.Screens").get, game, "Gen2TradeMenu"), "native trade adapter unavailable")
+          end
+        elseif verb == "march_in_place" then
+          expect((name(a) or integer(a, 0)) and (warped or entity(ow, a)), "native NPC unavailable")
+          expect(type(b) == "boolean", "invalid march option")
+          local Objects = g3("objects")
+          expect(type(Objects.setWalkInPlace) == "function" and (Objects.walkInPlaceType("down")
+            or Objects.walkInPlaceType("up")), "native walk-in-place unavailable")
+        end
+        if verb == "walk_npc" or verb == "pan_camera" then
+          expect(generation == 3 and type(g3("objects").applyMovement) == "function"
+            or generation == 2 and type(ow.beginMovement) == "function", "native movement adapter unavailable")
+        end
       elseif not ARITY[verb] then
         expect(fn, "native adapter unavailable: " .. verb)
         if verb == "push_screen" then
@@ -415,6 +488,7 @@ function UnifiedScripts.new(env)
       lockWorld = lockWorld, locks = generation == 3 and lockWorld._locks or nil,
       epoch = hooks.ownerEpoch and hooks:ownerEpoch(modId), ownedUI = {} }
     local ctx, runner, finish, schedule
+    token.strVars = {}
     if generation == 1 then
       local made, value = pcall(function() return req("src.script.ScriptRunner").new(game, ow) end)
       if not made then return nil, "native runner unavailable: " .. tostring(value) end
@@ -463,6 +537,9 @@ function UnifiedScripts.new(env)
         if Choice and Choice.done == token.choiceDone then Choice.reset() end
         local Message = token.message
         if Message and Message._done == token.messageDone then Message.close() end
+        local stack = game.stack
+        if token.screen and stack and stack.top and stack:top() == token.screen then stack:pop() end
+        if token.partyMenu and token.partyMenu.isOpen() then token.partyMenu.close() end
       else
         local states = game.stack and game.stack.states
         for i, state in ipairs(states or {}) do
@@ -479,6 +556,7 @@ function UnifiedScripts.new(env)
             table.remove(states, i)
           end
         end
+        if token.ownedUI[ow.fadeOverlay] then ow.fadeOverlay = nil end
         if token.ownedUI[ow.stayedTextBox] then ow.stayedTextBox = nil; ow.textbox = nil end
         if removedText then ow.textbox = nil end
         if token.ownsChoice then ow.choicebox = nil end
@@ -578,10 +656,22 @@ function UnifiedScripts.new(env)
       end
       return result
     end
+    local GEN2_GIFT_TEXT = {
+      _GotMonText = "ReceivedItemText",
+      _DoYouWantToNicknameText = "_AskGiveNicknameText",
+      _SentToBoxText = "_BallSentToPCText",
+    }
+    local RSE_GIFT_TAIL = "LittlerootTown_ProfessorBirchsLab_Text_LikeYouToHavePokemon"
     local function giftText(key, monName, box)
       local data = game.data or {}
-      local source = generation == 3 and (data.gen3Text or data.text)
-        or generation == 2 and (data.gen2Text or data.text) or data.text
+      if generation == 2 then
+        local label = GEN2_GIFT_TEXT[key]
+        if label and data.text and type(data.text[label]) == "string" then
+          return text(label, { STRBUF = monName })
+        end
+        error("native gift text content unavailable: " .. key, 0)
+      end
+      local source = generation == 3 and (data.gen3Text or data.text) or data.text
       if source and type(source[key]) == "string" then
         return text(key, { RAM = monName, PLAYER = save.name or save.playerName or "",
           BOXMONNICKS = monName, BOXMON = monName, BOX = box or "",
@@ -590,12 +680,25 @@ function UnifiedScripts.new(env)
       if generation == 3 then
         local RomText = g3("rom_text")
         if key == "_SentToBoxText" then return g3("storage").pcTransferMessage(save, monName) end
-        local keys = key == "_GotMonText" and { "Text_PlayerObtainedTheMon" }
-          or { "Text_GiveNicknameToReceivedMon", "gText_UnusedNicknameReceivedPokemon", "gText_NicknameReceivedPokemon" }
-        for _, label in ipairs(keys) do
-          if RomText.has(label) then
-            return RomText.box(label, { playerName = save.name or save.playerName,
-              stringVars = { monName, monName }, opponentMon1 = monName })
+        local ctx3 = { playerName = save.name or save.playerName,
+          rivalName = save.rivalName, stringVars = { monName, monName }, opponentMon1 = monName }
+        if key == "_GotMonText" then
+          if RomText.has("Text_PlayerObtainedTheMon") then
+            return RomText.box("Text_PlayerObtainedTheMon", ctx3)
+          end
+          if RomText.has(RSE_GIFT_TAIL) then
+            local IR = g3("scripting.text_ir")
+            local whole, tail, from = RomText.ir(RSE_GIFT_TAIL), {}, 1
+            for i, seg in ipairs(whole) do
+              if seg.t == "para" then from = i + 1 end
+            end
+            for i = from, #whole do tail[#tail + 1] = whole[i] end
+            return IR.toTextBox(RomText.translate(tail, ctx3, RSE_GIFT_TAIL), ctx3)
+          end
+        else
+          for _, label in ipairs({ "Text_GiveNicknameToReceivedMon", "gText_UnusedNicknameReceivedPokemon",
+              "gText_NicknameReceivedPokemon" }) do
+            if RomText.has(label) then return RomText.box(label, ctx3) end
           end
         end
         if key == "_DoYouWantToNicknameText" then
@@ -612,11 +715,13 @@ function UnifiedScripts.new(env)
       local body = text(value, subs)
       local cry, cryWait, sound, engage = ctx.pendingCry, ctx.pendingCryWait,
         ctx.pendingTextSound, ctx.pendingEngageMusic
+      local auto = ctx.pendingTextAuto
       ctx.pendingCry, ctx.pendingCryWait, ctx.pendingTextSound, ctx.pendingEngageMusic = nil, nil, nil, nil
+      ctx.pendingTextAuto = nil
       if generation == 2 then
-        if cry or sound or engage then
+        if cry or sound or engage or auto then
           local TextBox, Sound, Music = req("src.render.TextBox"), req("src.core.Sound"), req("src.core.Music")
-          local options = { auto = { delay = 0, wait = not cry or cryWait or false } }
+          local options = { auto = { delay = 0, wait = not auto and (not cry or cryWait) or false } }
           if cry then options.auto.sound = function() return Sound.playCry(game.data, cry) end end
           if sound then options = TextBox.soundOpts(game, sound, options) end
           if engage then options.auto.afterSound = function() Music.play(game.data, engage) end end
@@ -650,7 +755,10 @@ function UnifiedScripts.new(env)
         expect(not Message.isOpen(), "world is busy")
         local completed = once(function() if not ask then runner:resume() end end)
         token.message = Message
-        local armed = cry or sound or engage
+        local armed = cry or sound or engage or auto
+        local IR = g3("scripting.text_ir")
+        body = IR.toAscii(IR.fromAscii(body), { playerName = save.name or save.playerName,
+          rivalName = save.rivalName, stringVars = token.strVars })
         if ask or armed then Message.showStay(body, { done = completed })
         else Message.show(body, completed) end
         token.messageDone = Message._done
@@ -671,7 +779,7 @@ function UnifiedScripts.new(env)
               if engage then g3("audio").playSong(engage); engage = nil end
               runner.waitingCheck = nil
               if not ask then
-                if cry and not cryWait then Message.close() else Message._stay = false end
+                if auto or cry and not cryWait then Message.close() else Message._stay = false end
                 return false
               end
               local Choice = req("src.ui.game3.choice")
@@ -722,11 +830,11 @@ function UnifiedScripts.new(env)
       runner:yield()
     end
 
-    local function move(ref, dirs)
+    local function move(ref, dirs, nowait)
       local target, id = entity(ow, ref)
       expect(target, "native movement target unavailable")
       if #dirs == 0 then return end
-      local callback = once(function() runner:resume() end)
+      local callback = once(function() if not nowait then runner:resume() end end)
       if generation == 3 then
         local stream, bytes = {}, { down = 0x10, up = 0x11, left = 0x12, right = 0x13 }
         for _, dir in ipairs(dirs) do stream[#stream + 1] = bytes[dir] end
@@ -752,7 +860,7 @@ function UnifiedScripts.new(env)
         end
         step()
       end
-      runner:yield()
+      if not nowait then runner:yield() end
     end
 
     local function pathTo(target, tx, ty)
@@ -804,6 +912,7 @@ function UnifiedScripts.new(env)
       expect(id, err); expect(integer(giftData.level, 1, 100), "invalid gift level")
       local speciesName = generation == 3 and g3("pokemon").name(id)
         or game.data.pokemon[id].name or id
+      token.strVars[1], token.strVars[2] = speciesName, speciesName
       local received = gotText and giftText("_GotMonText", speciesName)
       local question = not giftData.nickname and not skipNickname
         and giftText("_DoYouWantToNicknameText", speciesName)
@@ -872,6 +981,118 @@ function UnifiedScripts.new(env)
         local nick = mon.nickname and mon.nickname ~= "" and mon.nickname or speciesName
         game.boxMonNicks, game.stringBuffer = nick, tostring(ctx.boxNum)
         show(giftText("_SentToBoxText", nick, ctx.boxNum))
+      end
+    end
+
+    local function adapted(verb, a, b, c)
+      if verb == "text_opts" then
+        ctx.pendingTextAuto = true
+      elseif verb == "walk_npc" then
+        local dirs = {}
+        for i, dir in ipairs(b) do dirs[i] = dir end
+        move(a, dirs, c and c.wait == false)
+      elseif verb == "emote" then
+        local frames = c or 60
+        if generation == 2 then
+          -- engine/overworld/scripting.asm:1065
+          local _, id = entity(ow, a)
+          ow:showEmote(BUBBLES[2][b], id, frames)
+          expect(ow.emote, "native emote unavailable")
+          runner.waitingCheck = function() return ow.emote == nil end
+          runner:yield()
+        else
+          -- pokefirered/src/event_object_movement.c:7068
+          local _, id = entity(ow, a)
+          local done = once(function() runner:resume() end)
+          g3("objects").startTrack(id, { { kind = "emote", emoteType = BUBBLES[3][b], frames = frames } }, done)
+          runner:yield()
+        end
+      elseif verb == "fade" then
+        local white = b == "white"
+        if generation == 2 then
+          -- data/events/special_pointers.asm:60
+          ow:screenFade((a == "out" and "out" or "in") .. (white and "White" or "Black"))
+        else
+          -- pokeemerald/src/scrcmd.c:627
+          local Fade = req("src.ui.game3.fade")
+          local done = once(function() runner:resume() end)
+          Fade.begin(a == "out" and (white and Fade.MODE.TO_WHITE or Fade.MODE.TO_BLACK)
+            or (white and Fade.MODE.FROM_WHITE or Fade.MODE.FROM_BLACK), 1, done)
+          runner:yield()
+        end
+      elseif verb == "pan_camera" then
+        -- pokefirered/src/field_specials.c:318
+        local Camera = g3("camera_object")
+        if a == "reset" then
+          Camera.remove(game)
+          return
+        end
+        expect(Camera.spawn(game), "native camera object unavailable")
+        local dirs = {}
+        for _ = 1, math.abs(a) do dirs[#dirs + 1] = a < 0 and "left" or "right" end
+        for _ = 1, math.abs(b) do dirs[#dirs + 1] = b < 0 and "up" or "down" end
+        move(Camera.LOCALID, dirs)
+      elseif verb == "march_in_place" then
+        local _, id = entity(ow, a)
+        expect(g3("objects").setWalkInPlace(id, b), "native walk-in-place unavailable")
+      elseif verb == "push_screen" and generation == 3 then
+        local state = req("src.ui.game3.mod_ui").push(game, a, b)
+        token.screen = state
+        runner.waitingCheck = function()
+          local stack = game.stack
+          if stack.top then stack:top() end
+          for _, entry in ipairs(stack.entries or {}) do
+            if entry.state == state then return false end
+          end
+          return true
+        end
+        runner:yield()
+      elseif verb == "push_screen" then
+        local stack = game.stack
+        local state = ownUI(req("src.ui.Screens").push, game, a, b)
+        runner.waitingCheck = function()
+          for _, live in ipairs(stack.states) do
+            if live == state then return false end
+          end
+          return true
+        end
+        runner:yield()
+      elseif verb == "trade" and generation == 3 then
+        -- pokefirered/src/trade_scene.c:2774
+        local Trade, PartyMenu = g3("scripting.natives_trade"), req("src.ui.game3.party_menu")
+        local rse = g3("profile").family(save) == "rse"
+        local entry = Trade.entry(a)
+        local picked
+        local pickDone = once(function() token.partyMenu = nil; runner:resume() end)
+        token.partyMenu = PartyMenu
+        PartyMenu.show(save.party, nil, {
+          mode = "choose", session = save,
+          menuType = rse and g3("rs.party_selection").NPC_TRADE or nil,
+          onSelect = function(slot)
+            local s = tonumber(slot)
+            if s and s >= 1 then picked = s - 1 end
+          end,
+          onClose = function() pickDone() end,
+        })
+        runner:yield()
+        local mon = picked and save.party[picked + 1]
+        local species = mon and tonumber(mon.species or mon.speciesId)
+        if not mon or g3("pokemon").isEgg(mon) or species ~= entry.requestedSpecies then
+          ctx.lastCheck = false
+          return
+        end
+        local offered = (rse and g3("scripting.natives_rs_npc_trade") or Trade).createTradeMon(a, Trade.levelOfSlot(picked))
+        expect(offered, "native trade mon unavailable")
+        Trade._offered = offered
+        local scene = Trade.sceneTask({ stringVars = {} }, nil, a, picked)
+        runner.waitingCheck = function() return scene() end
+        runner:yield()
+        ctx.lastCheck = true
+      elseif verb == "trade" then
+        -- engine/overworld/scripting.asm:600
+        local done = once(function() runner:resume() end)
+        expect(ownUI(ow.openNpcTrade, ow, a, done) ~= false, "native trade unavailable")
+        runner:yield()
       end
     end
 
@@ -989,7 +1210,10 @@ function UnifiedScripts.new(env)
           return ownUI(req("src.script.Commands").give_item, ctx, p.item, b, c, d, row[6], row[7])
         end
         local ok
-        if generation == 3 then ok = g3("bag").add(save.bag, p.item, b or 1)
+        if generation == 3 then
+          local row = g3("items_data")._byId[p.item]
+          token.strVars[1] = row and row.name or tostring(a)
+          ok = g3("bag").add(save.bag, p.item, b or 1)
         else ok = req("src.inventory.Bag").add(save, p.item, b or 1, game.data) end
         if not ok then show(d or "You can't carry any more items!"); return math.huge end
         if c ~= false then show(c or "You received " .. tostring(a) .. "!") end
@@ -1100,6 +1324,8 @@ function UnifiedScripts.new(env)
         elseif verb == "fade_music" then req("src.core.Music").fadeOut(a or 10)
         elseif verb == "play_default_music" then ow:playMapMusic()
         else return ownUI(req("src.script.Commands")[verb], ctx, a) end
+      elseif ADAPTED[verb] and ADAPTED[verb][generation] then
+        return adapted(verb, a, b, c)
       else
         expect(p.fn, "native adapter unavailable: " .. verb)
         return ownUI(p.fn, ctx, unpack(row, 2, #row))
@@ -1158,7 +1384,9 @@ function UnifiedScripts.new(env)
         local done, value = runner.waitingCheck()
         if done then runner.waitingCheck = nil; runner:resume(value) end
       end
-      if env.ready(game, native, token) then
+      local overlay = generation == 1 and ow.fadeOverlay
+      local fading = overlay and game.stack:top() == overlay and token.ownedUI[overlay]
+      if fading or env.ready(game, native, token) then
         local dest = token.destination
         if dest then
           if locationNow.mapId ~= dest.mapId or locationNow.x ~= dest.x or locationNow.y ~= dest.y

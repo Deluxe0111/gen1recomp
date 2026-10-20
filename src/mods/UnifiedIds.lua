@@ -1,13 +1,16 @@
--- API 3 species IDs follow the Gen 1 public spelling. Native packs stay native.
 local Merge = require("src.mods.Merge")
 local Ids = {}
 local aliases = { FARFETCH_D = "FARFETCHD", MR__MIME = "MR_MIME" }
 local inverse = { FARFETCHD = "FARFETCH_D", MR_MIME = "MR__MIME" }
+local typeAliases = { PSYCHIC = "PSYCHIC_TYPE", MYSTERY = "CURSE_TYPE" }
+local typeInverse = { PSYCHIC_TYPE = "PSYCHIC", CURSE_TYPE = "MYSTERY" }
 function Ids.canonical(id, kind, generation)
   if generation == 2 and kind == "species" then return aliases[id] or id end
+  if generation == 3 and kind == "type" then return typeAliases[id] or id end
   return id
 end
 function Ids.native(id, kind, generation, contains)
+  if generation == 3 and kind == "type" then return typeInverse[id] or id end
   local target = generation == 2 and kind == "species" and inverse[id]
   if target and (not contains or contains(target)) then return target end
   return id

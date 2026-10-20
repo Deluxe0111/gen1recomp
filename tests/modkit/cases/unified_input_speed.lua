@@ -1,4 +1,3 @@
--- API 3 pointer and speed hooks through native owners and real input services.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -141,7 +140,6 @@ for generation = 1, 3 do
   T.eq(seen[3].phase, "released", label .. "mouse release closes sequence")
   T.eq(g.modPointers.mouse, nil, label .. "mouse release removes tracking")
 
-  -- Same real virtual pad fixture used by pointer_input, including Input holds.
   TouchControls.active, TouchControls.enabled = true, true
   TouchControls.img = { stub = true }
   local layout = TouchControls:layout()

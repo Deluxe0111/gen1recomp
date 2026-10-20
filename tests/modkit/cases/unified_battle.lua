@@ -1,5 +1,3 @@
--- Portable battle records and intents over the three native BattleAPI adapters.
--- Battle screens and Gen 3 UI/session modules use the snapshot/gate fixtures.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -406,7 +404,6 @@ for generation = 1, 3 do
   rejected(value, reason, "no battle", "removed provider snapshot")
 end
 
--- The real Gen 3 odds helper is pure even with a catch replacement installed.
 local f = fixture(3)
 local api = UnifiedBattle.new(function() return f.game end, 3, "firered")
 local Catching3 = require("src.core.game3.battle.catching")
@@ -442,7 +439,6 @@ T.eq(item(snapshot, "MASTER_BALL").catchable, false, "trainer battle balls are n
 T.eq(item(snapshot, "MASTER_BALL").catchChance, nil, "trainer battle has no catch preview")
 f.state.wild, f.state.kind = true, "wild"
 
--- Doubles retain native battler IDs and use the active partner's moves/foe.
 f.state.double, f.state.activeBattler, f.ui._active = true, 2, 2
 f.reserve.moves, f.reserve.pp, f.reserve.maxPp = { 57 }, { 15 }, { 15 }
 local foe = mon(3, "PIDGEY")

@@ -1,4 +1,3 @@
--- Portable warp options through the real Loader and native arrival machinery.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -181,7 +180,6 @@ local function fixture(version, f)
     replace(cache, "read", function(self, path, ...)
       return NativeAssets.bytes(version, path) or read(self, path, ...)
     end)
-    -- An empty event bundle is fixture data; native activation and VM stay live.
     replace(Space, "bundle", { scripts = {}, text = {}, movements = {}, events = {} })
     replace(Space, "vm", nil)
     replace(Space, "active", false)
@@ -399,7 +397,6 @@ for _, version in ipairs(versions) do
         elseif f.generation == 2 then
           f.world:setMap(f.home, 1, 1, "down", { keepMusic = true })
         else
-          -- Removing the owned transition cancels its native callbacks.
           f.stack:pop()
           f.world.transitioning = false
         end
@@ -410,7 +407,6 @@ for _, version in ipairs(versions) do
       else
         f.world:setMap(f.home, 1, 1, "down", { keepMusic = true })
       end
-      -- Pump even if cancellation retired the busy flag, to exercise stale tasks.
       for _ = 1, 600 do f:tick() end
       T.eq(f.exports.calls, 0, version .. " " .. reason .. " suppresses stale success")
     end)
@@ -624,8 +620,6 @@ for _, version in ipairs(versions) do
   end
 end
 
--- Neutral map/cache/sprite fixtures cannot establish live ROM art, audio output,
--- route scripts or hardware timing. Those require an imported game and live play.
 NativeVersions.select(savedNativeVersion)
 Version.set(savedVersion)
 ModRuntime.install(savedRuntime[1], savedRuntime[2], savedRuntime[3])

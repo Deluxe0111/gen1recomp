@@ -30,6 +30,7 @@ local resolveGame = nil
 local built = {}
 -- mod ids that took each facade, for attribution in the warnings below
 local claimants = {}
+local modernClaims = {}
 local warned = {}
 
 local function warnOnce(key, fmt, ...)
@@ -757,8 +758,9 @@ COVERAGE["src.world.WorldAPI"] = {
   notes = {
     overworld = "Gold's World is not a stack state, so nothing can hide it; "
       .. "the returned object is a World, not an OverworldState",
-    warpTo = "forwards onDone, keepMusic and arrive to World:warpToMapId; "
-      .. "onDone runs at transition end before optional arrival FX finish",
+    warpTo = "opts is accepted for parity and nothing in it is read for "
+      .. "API 1 and 2 mods: no arrive FX, no onDone, no keepMusic; API 3 "
+      .. "mods get onDone, keepMusic and arrive from mod.world",
     toggleObject = "visibility IS the MAPOBJECT_EVENT_FLAG, so an off-map "
       .. "toggle is refused where Gen 1 accepts it",
     setFlag = "Gen 2 event flags are NUMERIC indices into wEventFlags; a "
@@ -948,12 +950,22 @@ local function buildOverworld()
   function ow.startWarpTo(mapId, x, y, facing, onDone, opts)
     local world = w("startWarpTo")
     if not world then return nil end
-    local warpOpts = (onDone or opts) and {
-      onDone = onDone, keepMusic = opts and opts.keepMusic,
-      arrive = opts and opts.arrive,
-    } or nil
+    if modernClaims[OW] then
+      local warpOpts = (onDone or opts) and {
+        onDone = onDone, keepMusic = opts and opts.keepMusic,
+        arrive = opts and opts.arrive,
+      } or nil
+      return world:warpToMapId(mapId, x, y,
+        facing or (world.player and world.player.facing), warpOpts)
+    end
+    if onDone then
+      warnOnce("ow.startWarpTo.onDone",
+        "[%s] OverworldState.startWarpTo drops onDone on Gold "
+        .. "(World:warpToMapId has no completion callback); a mod chaining "
+        .. "off it stalls", who(OW))
+    end
     return world:warpToMapId(mapId, x, y,
-      facing or (world.player and world.player.facing), warpOpts)
+      facing or (world.player and world.player.facing))
   end
 
   function ow.canCollisionWarp()
@@ -1435,9 +1447,9 @@ COVERAGE[OW] = {
       .. "the World as self and can call through",
     talkTo = "seamed into World:interactBody once the object is resolved; a "
       .. "true return suppresses the built-in path",
-    startWarpTo = "World:warpToMapId with native map setup fade; forwards "
-      .. "onDone, keepMusic and arrive; onDone runs at transition end before "
-      .. "optional arrival FX finish",
+    startWarpTo = "World:warpToMapId with the native map setup fade; onDone "
+      .. "and opts are dropped for API 1 and 2 mods; API 3 mods get onDone, "
+      .. "keepMusic and arrive",
     npcAtCell = "Gold does NOT match targetX/targetY, so an NPC walking INTO "
       .. "the cell is missed; it DOES match all four cells of a BIG_OBJECT",
     player = "the LIVE World's field, read and written through: it is a "
@@ -2136,6 +2148,7 @@ Gen2Compat.ADAPTERS = ADAPTERS
 
 function Gen2Compat.bind(fn)
   resolveGame = fn
+  modernClaims = {}
 end
 
 function Gen2Compat.serves(name)
@@ -2184,7 +2197,7 @@ end
 
 -- The one entry point the Loader calls.  `modId` is attribution only: no
 -- adapter branches on it.
-function Gen2Compat.resolve(name, modId)
+function Gen2Compat.resolve(name, modId, apiVersion)
   local spec = ADAPTERS[name]
   if not spec then return nil end
   local module = built[name]
@@ -2193,6 +2206,7 @@ function Gen2Compat.resolve(name, modId)
     built[name] = module
   end
   if modId then
+    if (tonumber(apiVersion) or 0) >= 3 then modernClaims[name] = true end
     local ids = claimants[name]
     if not ids then ids = {} claimants[name] = ids end
     local seen = false

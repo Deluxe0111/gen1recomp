@@ -768,12 +768,16 @@ end
 local function notifyTrade(transaction)
   if transaction.notified then return end
   transaction.notified = true
-  ModRuntime.emit("pokemon.received", {
-    mon = transaction.received, from = "link", peerName = transaction.peerName,
-  })
-  ModRuntime.emit("trade.completed", {
-    sent = transaction.sent, received = transaction.received, evolveTo = transaction.evolveTo,
-  })
+  if ModRuntime.wants("pokemon.received") then
+    ModRuntime.emit("pokemon.received", {
+      mon = transaction.received, from = "link", peerName = transaction.peerName,
+    })
+  end
+  if ModRuntime.wants("trade.completed") then
+    ModRuntime.emit("trade.completed", {
+      sent = transaction.sent, received = transaction.received, evolveTo = transaction.evolveTo,
+    })
+  end
 end
 
 -- pokefirered/src/trade_scene.c:779 CB2_LinkTrade

@@ -1473,6 +1473,8 @@ function World:load()
   if spawn and spawn.map and maps[spawn.map] then
     startMap, startX, startY = spawn.map, spawn.x, spawn.y
   end
+  startMap, startX, startY, startFacing = World.bootSpawn(
+    self.game and self.game.data, maps, startMap, startX, startY, startFacing)
   local saved = self.game and self.game.save and self.game.save.position
   -- Which map setup script this load is (engine/menus/intro_menu.asm): a file
   -- with a recorded position is CONTINUE, a New Game is the SPAWN_HOME warp.
@@ -1522,7 +1524,6 @@ function World:load()
   return self.map ~= nil
 end
 
--- Just scripts, not everything World:busy covers: a deferred object rebuild
 -- has to wait for the SCRIPT, not for the text box that is showing its line.
 function World:scriptRunning()
   return ((self.vm and self.vm:running())
@@ -5044,9 +5045,7 @@ function World:rememberOutdoor(id, x, y)
 end
 
 -- EscapeRopeOrDig's .CheckCanDig (engine/events/overworld.asm): the map's
--- environment must be CAVE or DUNGEON.  A valid inherited lastOutdoor target
--- takes precedence; the native fallback's banked triple must name a real warp.
--- The cart reads wDigWarpNumber / wDigMapGroup / wDigMapNumber
+-- environment must be CAVE or DUNGEON.  The cart reads wDigWarpNumber / wDigMapGroup / wDigMapNumber
 -- there; this port keeps one banked triple -- backupWarp, the same store a -1
 -- warp destination resolves through and the one the save carries -- so the
 -- rope pays out to the last warp that banked it rather than to a second
@@ -5606,6 +5605,15 @@ function World:updateFishing()
     end)
     return
   end
+end
+
+function World.bootSpawn(data, maps, map, x, y, facing)
+  local boot = data and data.field and data.field.boot
+  if boot and boot.startMap and maps[boot.startMap] then
+    return boot.startMap, boot.startX or x, boot.startY or y,
+      boot.startFacing or facing
+  end
+  return map, x, y, facing
 end
 
 -- CheckHeadbuttTreeTile (home/map_objects.asm).
@@ -7310,7 +7318,6 @@ function World:trainerWinLossText()
   return winKey and text[winKey] or nil, lossKey and text[lossKey] or nil
 end
 
--- Keep deferred trainer preparation tied to the native session and VM run.
 local function prepareTrainerBattle(self, record, npc, startBattle, cancelBattle)
   if self.pendingTrainerBattle then return true end
   local game, vm, map = self.game, self.vm, self.map
@@ -9114,13 +9121,21 @@ function World:interactBody()
   return false
 end
 
-function World:fitScale()
+function World:pixelFitScale()
   local w, h = Playfield.dimensions()
-  return math.max(1, math.floor(math.min(w / 160, h / 144)))
+  return Playfield.pixelScale(w, h, 160, 144)
+end
+
+function World:pixelZoomScale()
+  return Zoom.scale(self:pixelFitScale())
+end
+
+function World:fitScale()
+  return self:pixelFitScale() / Playfield.ratio()
 end
 
 function World:zoomScale()
-  return Zoom.scale(self:fitScale())
+  return self:pixelZoomScale() / Playfield.ratio()
 end
 
 -- home/map.asm:1739 LoadTilesetGFX
@@ -9519,13 +9534,14 @@ function World:bgTileAttrAt(map, tileset, mx, my)
   return { tileId = tileId, rawTileId = tile, attr = attr }
 end
 
--- LÖVE scissor is window/canvas space; Playfield.push translates draws but not
--- scissor rects.  Map-local (ox, oy, s) feet/bbox regions must be lifted.
-local function playfieldOrigin()
-  if Playfield.entered and Playfield.box then
-    return Playfield.box.x or 0, Playfield.box.y or 0
-  end
-  return 0, 0
+local function scissorRect(x, y, w, h)
+  local G = love.graphics
+  if not G.transformPoint then return x, y, w, h end
+  local x1, y1 = G.transformPoint(x, y)
+  local x2, y2 = G.transformPoint(x + w, y + h)
+  local sx, sy = math.floor(math.min(x1, x2) + 0.5), math.floor(math.min(y1, y2) + 0.5)
+  return sx, sy, math.floor(math.max(x1, x2) + 0.5) - sx,
+    math.floor(math.max(y1, y2) + 0.5) - sy
 end
 
 local function intersectScissor(x, y, w, h, px, py, pw, ph)
@@ -9710,11 +9726,9 @@ end
 -- BG_PRIO tiles draw fully opaque.
 function World:blitBgOverRegion(mapDef, ox, oy, s, rx0, ry0, rx1, ry1, keyed, tileFilter)
   local G = love.graphics
-  local pfX, pfY = playfieldOrigin()
-  local scissorX = pfX + math.floor(ox + rx0 * s)
-  local scissorY = pfY + math.floor(oy + ry0 * s)
-  local scissorW = math.ceil((rx1 - rx0) * s)
-  local scissorH = math.ceil((ry1 - ry0) * s)
+  local scissorX, scissorY, scissorW, scissorH = scissorRect(
+    math.floor(ox + rx0 * s), math.floor(oy + ry0 * s),
+    math.ceil((rx1 - rx0) * s), math.ceil((ry1 - ry0) * s))
   local psx, psy, psw, psh
   if G.getScissor then psx, psy, psw, psh = G.getScissor() end
   local clipX, clipY, clipW, clipH =
@@ -9753,6 +9767,7 @@ function World:drawFeetComposite(entity, ox, oy, s, drawBottomOam)
   local prev = G.getCanvas()
   G.push("all")
   G.origin()
+  G.setScissor()
   G.setCanvas(canvas)
   G.clear(0, 0, 0, 0)
   G.translate(-x0, -y0)
@@ -10396,10 +10411,11 @@ end
 function World:rebuildNeighbors()
   self.neighbors = {}
   if not self.map then return end
-  local s = self:zoomScale()
+  local s = self:pixelZoomScale()
+  local d = Playfield.ratio()
   local ww, wh = Playfield.dimensions()
-  local vw = math.ceil(ww / s)
-  local vh = math.ceil(wh / s)
+  local vw = math.ceil(math.floor(ww * d + 0.5) / s)
+  local vh = math.ceil(math.floor(wh * d + 0.5) / s)
   if vw % 2 ~= 0 then vw = vw + 1 end
   if vh % 2 ~= 0 then vh = vh + 1 end
   self.viewW, self.viewH = vw, vh
@@ -11843,13 +11859,13 @@ function World:pollInput(input)
 end
 
 function World:zoomStep(delta)
-  Zoom.step(delta, self:fitScale())
+  Zoom.step(delta, self:pixelFitScale())
   self:rebuildNeighbors()
   self:rebuildPeople({ seamless = true })
 end
 
 function World:zoomCycle()
-  Zoom.cycle(self:fitScale())
+  Zoom.cycle(self:pixelFitScale())
   self:rebuildNeighbors()
   self:rebuildPeople({ seamless = true })
 end
@@ -11891,8 +11907,12 @@ function World:drawGround(s)
     -- the map grid as the camera moved.
     local canvas = G.getCanvas()
     local bw, bh
-    if canvas then
+    if canvas and canvas.getPixelDimensions then
+      bw, bh = canvas:getPixelDimensions()
+    elseif canvas then
       bw, bh = canvas:getDimensions()
+    elseif self.pixelDrawing then
+      bw, bh = self.pixelW, self.pixelH
     else
       bw, bh = Playfield.dimensions()
     end
@@ -12011,6 +12031,20 @@ local function newPersonEntry(world)
 end
 
 function World:drawPeople(s, billboard)
+  local d = Playfield.ratio()
+  if not self.pixelDrawing and d ~= 1 then
+    local G = love.graphics
+    G.push()
+    G.scale(1 / d, 1 / d)
+    self.pixelDrawing = true
+    local sp = s * d
+    if math.abs(sp - math.floor(sp + 0.5)) < 1e-6 then sp = math.floor(sp + 0.5) end
+    local ok, err = pcall(self.drawPeople, self, sp, billboard)
+    self.pixelDrawing = false
+    G.pop()
+    if not ok then error(err, 0) end
+    return
+  end
   local p = self.player
   local cam = self.camera
   local hideAll, hidePlayer = self:flyHides()
@@ -12331,16 +12365,16 @@ function World:drawFadeRemap(s, w, h)
     self.fadeCanvas = nil
   end
   if not canvas then
-    local ok, made = pcall(love.graphics.newCanvas, w, h)
+    local ok, made = pcall(PixelCanvas.new, w, h, "nearest")
     if not ok or not made then return false end
-    made:setFilter("nearest", "nearest")
     canvas = made
     self.fadeCanvas = canvas
   end
   local G = love.graphics
   local previous = G.getCanvas()
-  G.push()
+  G.push("all")
   G.origin()
+  G.setScissor()
   G.setCanvas(canvas)
   G.clear(0, 0, 0, 1)
   self:drawWorldBody(s)
@@ -12374,19 +12408,22 @@ function World:draw()
     return
   end
 
-  local s = self:zoomScale()
+  local d = Playfield.ratio()
+  local pw, ph = math.floor(w * d + 0.5), math.floor(h * d + 0.5)
+  local sp = self:pixelZoomScale()
+  local s = sp / d
   -- Decided before sizing the view: a world pipeline wins over tilt, and tilt
   -- grows the capture the way Renderer:worldViewSize does on Gen 1 so the
   -- camera, BorderFill and tilt canvas all share one grid.
   local pipelineId = Pipelines.worldPipeline()
   local tilt = (not pipelineId) and Tilt.active() and self:tiltMesh() ~= nil
-  local gw, gh = w, h
+  local gw, gh = pw, ph
   if tilt then
     local g = Tilt.viewGrowth()
-    gw, gh = math.ceil(w * g), math.ceil(h * g)
+    gw, gh = math.ceil(pw * g), math.ceil(ph * g)
   end
-  local vw = math.ceil(gw / s)
-  local vh = math.ceil(gh / s)
+  local vw = math.ceil(gw / sp)
+  local vh = math.ceil(gh / sp)
   if vw % 2 ~= 0 then vw = vw + 1 end
   if vh % 2 ~= 0 then vh = vh + 1 end
   if vw ~= self.viewW or vh ~= self.viewH then
@@ -12403,14 +12440,15 @@ function World:draw()
     self.camera.y = self.camera.y + (self.shake.phase or 0)
   end
   local ScreenPosition = loaded("src.core.ScreenPosition")
-  local posLift = 0
+  local liftPx = 0
   if not ScreenPosition.skinActive(w, h) then
-    posLift = ScreenPosition.lift(h, 144 * self:fitScale(),
-      ScreenPosition.safeTop())
+    liftPx = ScreenPosition.lift(ph, 144 * self:pixelFitScale(),
+      ScreenPosition.safeTop() * d)
   end
-  if posLift > 0 then
-    self.camera.y = self.camera.y + posLift / s
+  if liftPx > 0 then
+    self.camera.y = self.camera.y + liftPx / sp
   end
+  local posLift = liftPx / d
 
   local override = pipelineId and self:drawPipeline(pipelineId, w, h, s) or nil
 
@@ -12423,14 +12461,24 @@ function World:draw()
   if override then
     G.setColor(1, 1, 1, 1)
     G.draw(override, 0, 0)
-  elseif tilt then
-    self:drawTilted(w, h, s, gw, gh)
   else
-    -- engine/tilesets/timeofday_pals.asm:65-91, home/lcd.asm:35-72
-    if self.fade and not self.fadeHold then
-      fadeStepped = self:drawFadeRemap(s, w, h)
-    end
-    if not fadeStepped then self:drawWorldBody(s) end
+    G.push()
+    G.scale(1 / d, 1 / d)
+    self.pixelDrawing, self.pixelW, self.pixelH = true, pw, ph
+    local ok, err = pcall(function()
+      if tilt then
+        self:drawTilted(pw, ph, sp, gw, gh)
+      else
+        -- engine/tilesets/timeofday_pals.asm:65-91, home/lcd.asm:35-72
+        if self.fade and not self.fadeHold then
+          fadeStepped = self:drawFadeRemap(sp, pw, ph)
+        end
+        if not fadeStepped then self:drawWorldBody(sp) end
+      end
+    end)
+    self.pixelDrawing = false
+    G.pop()
+    if not ok then error(err, 0) end
   end
 
   -- Fixed-scale overlays go to the UI layer when Game2 split one off.
@@ -12449,11 +12497,11 @@ function World:draw()
   -- then the padded 7x7 frontpic at top+1, left+1.  UI, so fitScale not zoom.
   if self.pokePic then
     local sPic = self:fitScale()
-    local pw = self.pokePic:getDimensions()
-    local pad = POKEPIC.pad[math.floor(pw / 8)] or POKEPIC.pad[7]
+    local picW = self.pokePic:getDimensions()
+    local pad = POKEPIC.pad[math.floor(picW / 8)] or POKEPIC.pad[7]
     G.push()
-    G.translate(math.floor((w - 160 * sPic) / 2),
-      math.floor((h - 144 * sPic) / 2) - posLift)
+    G.translate(Playfield.snap((w - 160 * sPic) / 2, d),
+      Playfield.snap((h - 144 * sPic) / 2, d) - posLift)
     G.scale(sPic, sPic)
     G.setColor(1, 1, 1, 1)
     local raw = self.pokePicTrueColor and GbcPalette.mode == "gbc"

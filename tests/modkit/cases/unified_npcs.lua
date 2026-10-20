@@ -1,4 +1,3 @@
--- Native runtime NPC behavior, independent of callback catalog acceptance.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -22,7 +21,6 @@ local function install(name, value)
   package.loaded[name] = value
 end
 
--- ROM census, font assets, event bundle and live session/map providers are fixtures.
 install("src.import.gba.map_catalog", { groupNumFor = function() return 1, 1 end })
 install("src.ui.game3.rs.font_faces", { load = function(_, name, language, _, _, _, textMode)
   local widths, quads = {}, {}
@@ -514,7 +512,6 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
   T.check(actor(freshId) ~= nil, "map reload materializes retained definitions")
   Objects.reset()
 
-  -- Reserve every native non-player, non-foreign slot with real imported actors.
   local full = mapDef("NPC_FULL")
   full.objects = {}
   for lid = 1, 0xBF do

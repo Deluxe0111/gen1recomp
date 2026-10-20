@@ -1,4 +1,3 @@
--- Neutral cache data for native menu input/draw tests; no ROM art is used.
 local Fixture = {}
 local ROOT = "data/generated/gba/"
 local versions = { ruby = 1, sapphire = 2, emerald = 3, firered = 4, leafgreen = 5 }
@@ -52,7 +51,6 @@ local function chunk(kind, body)
   return be32(#body) .. bytes .. be32(xor(c, 0xFFFFFFFF))
 end
 
--- A one-colour indexed PNG keeps the data independent of graphics APIs.
 local function png(w, h)
   local key = w .. ":" .. h
   if not images[key] then

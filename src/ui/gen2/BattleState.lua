@@ -4009,7 +4009,9 @@ function BattleState:catchOptions(itemId)
   local enemy = battle and battle.enemy
   if not enemy then return nil end
   local enemyDef = data.pokemon and data.pokemon[enemy.species]
-  local dexEntry = data.gen2Pokedex and data.gen2Pokedex[enemy.species]
+  -- engine/items/item_effects.asm:758
+  local dexEntry = data.gen2Pokedex and data.gen2Pokedex.entries
+    and data.gen2Pokedex.entries[enemy.species]
   local evolveItem
   for _, entry in ipairs((enemyDef and enemyDef.evolutions) or {}) do
     if entry.method == "EVOLVE_ITEM" then evolveItem = entry.item end
@@ -4169,7 +4171,7 @@ function BattleState:useItem(itemId)
     -- the ETHER / ELIXER family.  Without the merged dataset this can only
     -- ever see RECORDS, the module's own built-ins, the same gap
     -- Game2:usePartyItem had for the field pack.
-    local action = ItemEffects.partyAction(itemId, self.game and self.game.data)
+    local action = ItemEffects.partyAction(itemId, self.game and self.game.data, true)
     if action then
       return self:useOnPartyMon(itemId, action)
     end
@@ -4279,7 +4281,7 @@ function BattleState:applyPartyItem(itemId, action, mon, slot, partySlot)
   if action == "pp" then
     result = ItemEffects.usePpItem(itemId, mon, slot, data)
   else
-    result = ItemEffects.useOnMon(itemId, mon, data)
+    result = ItemEffects.useOnMon(itemId, mon, data, { game = self.game, battle = self.battle })
   end
   -- HealStatus's `.not_full_heal` and IsItemUsedOnConfusedMon: a $ff-mask item
   -- used on whoever is OUT also clears SUBSTATUS_CONFUSED, and clears it even
@@ -4306,7 +4308,7 @@ function BattleState:applyPartyItem(itemId, action, mon, slot, partySlot)
       and not mon.status then
     self.battle:volatile(mon).nightmare = nil
   end
-  self:consumeItem(itemId)
+  if not result.keep then self:consumeItem(itemId) end
   if menu then
     -- engine/items/item_effects.asm:1671
     local climbs = (action == "heal" or action == "revive")

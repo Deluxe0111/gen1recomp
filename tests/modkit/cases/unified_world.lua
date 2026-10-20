@@ -1,5 +1,3 @@
--- Portable world calls over the native adapters and the Gen 1 script runner.
--- Only UI, map arrival and battle completion are driven by the fixture.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
@@ -545,7 +543,7 @@ for generation = 1, 3 do
   T.eq(calls, 1, "duplicate or late battle completion cannot finish twice")
   if generation == 1 then T.eq(f.afterBattle.result, "won", "native Gen 1 afterBattle is preserved") end
 
-  for _, outcome in ipairs({ "win", { caught = true } }) do
+  for _, outcome in ipairs({ "win", "lose", { caught = true } }) do
     local outcomes, detail = 0, {}
     T.eq(api:startWildBattle("MEW", 5, function(...)
       outcomes = outcomes + 1
@@ -650,7 +648,6 @@ for generation = 1, 3 do
   if f.restoreField then f:restoreField() end
 end
 
--- Reserved dataset metadata must never be accepted as a Pokemon species.
 local native = { species = "MEW", hp = 20, level = 5, stats = { hp = 30 }, moves = {} }
 for _, id in ipairs({ "growthRates", "tmhmMoves" }) do
   local ok, err = Records.applyMon(native, { species = id, hp = 1 }, 2,

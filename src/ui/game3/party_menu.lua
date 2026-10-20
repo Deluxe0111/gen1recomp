@@ -2169,7 +2169,6 @@ function PartyMenu.handleInput(input)
   if PartyMenu.mode == "battle_switch" or PartyMenu.mode == "battle_faint" then
     local sendOut = PartyMenu.mode == "battle_faint"
     if battle_grid_input(input) then
-      -- Navigation has already been applied.
     elseif is_double() then
       battle_nav_double(input)
     else

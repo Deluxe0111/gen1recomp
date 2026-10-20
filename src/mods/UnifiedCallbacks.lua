@@ -1,6 +1,3 @@
--- API 3 subscriptions only. Native buses retain ordering, ownership and rollback.
--- Game/battle/context handles remain native escape hatches; record conversion
--- visits only named record fields, never the engine graph behind those handles.
 local Records = require("src.mods.UnifiedRecords")
 local GameVersion = require("src.core.GameVersion")
 local Runtime = require("src.mods.Runtime")
@@ -15,8 +12,6 @@ local function shallow(value)
   return out
 end
 
--- Public contract introduction generations; registration does not imply that
--- every engine has a native call site for the callback.
 local catalogs = { events = {}, hooks = {} }
 local function names(surface, introduction, list)
   for name in list:gmatch("%S+") do catalogs[surface][name] = introduction end
@@ -40,7 +35,7 @@ names("events", 1, [[
   link.connected link.ended link.battle_ended link.desync pokemon.received
   trade.completed
 ]])
-names("events", 1, "script.started script.ended")
+names("events", 1, "script.started script.ended mod.options_changed")
 names("events", 2, [[
   intro.boot.copyright intro.boot.gamefreak intro.boot.title intro.boot.movie
   intro.boot.movie_ended clock.day_changed phone.call_received radio.channel
@@ -71,13 +66,134 @@ names("hooks", 1, [[
   trainer.before_battle battle.caught_marker_visible battle.menu_auxiliary
   battle.field_residual pokemon.level_visible
 ]])
+names("hooks", 1, "battle.style catch.nickname catch.party_full transition.style")
 names("hooks", 2, [[
   shiny.roll gender.roll held_item.trigger breeding.compatibility phone.contact_list
   battle.enemy_switch_or_item
 ]])
 
+local GEN2_VERSIONS = "gold silver crystal"
+local GEN3_VERSIONS = "firered leafgreen ruby sapphire emerald"
+local native = { events = {}, hooks = {} }
+local function nativeTo(surface, versions, list)
+  for name in list:gmatch("%S+") do
+    local set = native[surface][name] or {}
+    for version in versions:gmatch("%S+") do set[version] = true end
+    native[surface][name] = set
+  end
+end
+nativeTo("events", GEN2_VERSIONS, [[
+  intro.boot.copyright intro.boot.gamefreak intro.boot.title intro.boot.movie
+  intro.boot.movie_ended clock.day_changed phone.call_received radio.channel
+  mail.written mail.read unown.unlocked apricorn.converted bug_contest.scored
+]])
+nativeTo("events", GEN2_VERSIONS .. " " .. GEN3_VERSIONS, [[
+  breeding.egg_created egg.hatched happiness.changed pokerus.infected
+  roamer.moved roamer.encountered
+]])
+nativeTo("hooks", GEN2_VERSIONS, "phone.contact_list")
+nativeTo("hooks", GEN2_VERSIONS .. " " .. GEN3_VERSIONS, [[
+  shiny.roll gender.roll held_item.trigger breeding.compatibility battle.enemy_switch_or_item
+]])
+
+local sitesByGeneration = { events = {}, hooks = {} }
+local function sites(surface, generations, list)
+  for name in list:gmatch("%S+") do
+    local set = {}
+    for gen in generations:gmatch("%d") do set[tonumber(gen)] = true end
+    sitesByGeneration[surface][name] = set
+  end
+end
+sites("events", "123", [[
+  assets.transformed battle.ball_thrown battle.battler_switched
+  battle.damage_dealt battle.ended battle.exp_gained battle.fainted
+  battle.move_used battle.started battle.status_inflicted
+  battle.turn_ended battle.turn_started checkpoint.restored
+  discord.join_requested flag.changed game.ready
+  intro.oak_speech.answered intro.oak_speech.finished
+  intro.oak_speech.started intro.oak_speech.step link.battle_ended
+  link.connected link.desync link.ended map.entered map.exited
+  map.reloaded mod.options_changed mods.loaded music.started
+  music.stopped player.warped pokemon.caught pokemon.evolved
+  pokemon.level_up pokemon.move_learned pokemon.received save.created
+  save.loaded save.loading save.writing screen.popped screen.pushed
+  script.ended script.started sound.played trade.completed
+  world.blacked_out world.block_replaced world.boulder_moved
+  world.interacted world.npc_spawned world.object_toggled world.stepped
+  world.trainer_engaged
+]])
+sites("events", "12", [[
+  world.live_maps_preparing world.live_maps_updated world.tod_changed
+]])
+sites("events", "13", [[
+  pokemon.before_give
+]])
+sites("events", "23", [[
+  breeding.egg_created egg.hatched happiness.changed pokerus.infected
+  roamer.encountered roamer.moved
+]])
+sites("events", "2", [[
+  apricorn.converted bug_contest.scored clock.day_changed
+  intro.boot.copyright intro.boot.gamefreak intro.boot.movie
+  intro.boot.movie_ended intro.boot.title mail.read mail.written
+  phone.call_received radio.channel unown.unlocked
+]])
+sites("hooks", "123", [[
+  battle.accuracy battle.bottom_ui_visible battle.catch_exp
+  battle.caught_marker_visible battle.charge_required battle.crit
+  battle.damage battle.enemy_action battle.exp_award
+  battle.field_residual battle.low_health_alarm battle.menu_auxiliary
+  battle.move_grid_navigation battle.overlay battle.run
+  battle.status_hud_visible battle.turn_order catch.rate
+  core.logic_speed core.quit_to_launcher core.update encounter.fishing
+  encounter.roll encounter.species encounter.table evolution.check
+  exp.gain fieldmove.eligibility input.gamepad input.key input.pointer
+  input.step input.wheel link.fingerprint movement.collision
+  movement.speed music.select music.volume pokemon.icon
+  pokemon.level_visible pokemon.sprite render.compose render.hud
+  render.letterbox render.output render.output_enabled render.viewport
+  render.window render.zones save.new_game save.write
+  screen.render_visible script.command trainer.before_battle
+  trainer.party ui.list_menu ui.naming.grid ui.options.rows
+  ui.party.grid_navigation ui.party.submenu ui.start_menu.items
+  warp.destination world.follower.spawn zoom.range
+]])
+sites("hooks", "12", [[
+  intro.oak_speech.build map.palette player.sprite transition.style
+  ui.pc.items ui.title_menu.items world.tod
+]])
+sites("hooks", "13", [[
+  item.use world.talk
+]])
+sites("hooks", "23", [[
+  battle.enemy_switch_or_item breeding.compatibility gender.roll
+  held_item.trigger shiny.roll
+]])
+sites("hooks", "1", [[
+  battle.style catch.nickname catch.party_full
+]])
+sites("hooks", "2", [[
+  phone.contact_list
+]])
+
 function UnifiedCallbacks.catalog()
   return { events = shallow(catalogs.events), hooks = shallow(catalogs.hooks) }
+end
+
+function UnifiedCallbacks.nativeVersions(surface, name)
+  local set = native[surface] and native[surface][name]
+  local introduction = catalogs[surface] and catalogs[surface][name]
+  if not introduction then return nil end
+  local out = {}
+  for _, version in ipairs(GameVersion.ORDER) do
+    local gens = sitesByGeneration[surface][name]
+    if set then
+      if set[version] then out[#out + 1] = version end
+    elseif gens and gens[GameVersion.generation(version)] then
+      out[#out + 1] = version
+    end
+  end
+  return out
 end
 
 local function userEvent(name)
@@ -94,13 +210,25 @@ function UnifiedCallbacks.supports(surface, name, generation, version)
     if GameVersion.generation(version) ~= generation then return false, "game version/generation mismatch" end
   end
   if surface == "events" and userEvent(name) then return true end
-  local introduction = catalogs[surface][name]
-  if introduction and generation >= introduction then return true end
+  local gens = sitesByGeneration[surface][name]
+  if catalogs[surface][name] and gens and gens[generation] then
+    local set = native[surface][name]
+    if not set then return true end
+    if version ~= nil then
+      if set[version] then return true end
+      return false, ("%s callback %s is not native to %s"):format(surface, name, version)
+    end
+    for candidate in pairs(set) do
+      if GameVersion.generation(candidate) == generation then return true end
+    end
+    return false, ("%s callback %s is not native to Gen %d"):format(surface, name, generation)
+  end
+  if catalogs[surface][name] then
+    return false, ("%s callback %s has no call site in Gen %d"):format(surface, name, generation)
+  end
   return false, ("unsupported %s callback %s in Gen %d"):format(surface, tostring(name), generation)
 end
 
--- Limit native extensions to record data before handing them to Records.mon;
--- a battler or a mod-added back reference must never trigger a graph copy.
 local function recordData(value, depth)
   if type(value) ~= "table" then
     if type(value) == "string" or type(value) == "number" or type(value) == "boolean" then return value end
@@ -121,8 +249,6 @@ local MON_FIELDS = [[species speciesId speciesNumbering item heldItem nickname n
   attack atk defense def speed spe special specialAttack specialDefense spAtk spDef spa spd]]
 local function safeMon(raw)
   local out = {}
-  -- Scalar metadata and explicitly known gene/serialization data are records;
-  -- engine tables and arbitrary back references stay outside the boundary.
   for key, value in pairs(raw) do
     local kind = type(value)
     if (type(key) == "string" or type(key) == "number")
@@ -245,7 +371,6 @@ local function boundary(loader, name, fishing)
       if not (raw.mon or raw.species or raw.speciesId) then return raw end
       local out = { mon = monView(raw.mon or raw), id = raw.id,
         side = raw.side or (raw.isPlayer == true and "player" or raw.isPlayer == false and "enemy" or nil) }
-      -- Both direct Gen 2 Pokemon and battler records expose the same mon fields.
       for k, v in pairs(out.mon) do if k ~= "native" then out[k] = v end end
       return bind(out, raw, "battler")
     elseif kind == "mon" then return monView(raw)
@@ -291,7 +416,6 @@ local function boundary(loader, name, fishing)
             for original, public in pairs(mons) do restoreValue(public, original, "mon") end
           end)
           local results = pack(pcall(operation, native, ...))
-          -- Payment may change levels, HP and moves as well as EXP.
           for original, public in pairs(mons) do
             local current = Records.mon(safeMon(original), generation, data, version)
             for field in pairs(public) do public[field] = nil end
@@ -376,7 +500,6 @@ local function boundary(loader, name, fishing)
       return raw
     elseif kind == "battler" then
       local canonical = value.mon or {}
-      -- Direct-field writes and writes through .mon are both legal.
       for k, v in pairs(value) do
         if k ~= "mon" and k ~= "id" and k ~= "side" and k ~= "native"
             and (not entry or v ~= before[k]) then canonical[k] = v end
@@ -454,7 +577,9 @@ local function boundary(loader, name, fishing)
     if name == "item.use" then return { false, "mon", "itemId", false } end
     if name == "ui.party.submenu" then return { false, false, "mon", "context" } end
     if name == "battle.enemy_action" or name == "battle.enemy_switch_or_item"
-        or name == "battle.overlay" then return { false } end
+        or name == "battle.overlay" or name == "battle.status_hud_visible"
+        or name == "battle.bottom_ui_visible"
+        or name == "battle.move_grid_navigation" then return { false } end
     if name:match("^ui%.") or name == "core.update" or name == "core.logic_speed"
         or name:match("^input%.") or name == "render.hud" or name == "render.zones"
         or name == "render.window" or name == "render.compose" or name == "save.write"
@@ -518,7 +643,6 @@ local function fishingArguments(loader, name, originals)
   end
   args[3] = pool
   return args, function(native)
-    -- Omitted context inherits the native extension; an explicit nil does not.
     if native.n == 3 and originals.n > 3 then
       native.n = originals.n
       for i = 4, originals.n do native[i] = originals[i] end

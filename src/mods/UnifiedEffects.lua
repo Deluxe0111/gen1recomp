@@ -1,5 +1,3 @@
--- Pure move-effect translation. The record is the original native move;
--- callers apply defaultChance only when no secondaryChance was supplied.
 local Map1 = require("src.battle.g3u.EffectMap1")
 local Map2 = require("src.battle.g3u.EffectMap2")
 local E = require("src.core.game3.battle.effect_ids")
@@ -21,9 +19,6 @@ local function names(text)
   return out
 end
 
--- These have native commands in gen2/Battle.lua, rather than stat or
--- weather entries in gen2/Effects.lua. A movedex registration alone is
--- not evidence that an effect has a handler.
 local supported2 = names([[
   EFFECT_NORMAL_HIT EFFECT_SLEEP EFFECT_POISON EFFECT_TOXIC EFFECT_PARALYZE
   EFFECT_BURN EFFECT_FREEZE EFFECT_CONFUSE EFFECT_POISON_HIT EFFECT_BURN_HIT
@@ -51,9 +46,6 @@ for _, source in ipairs({ Gen2.STAT_CHANGES, Gen2.STAT_CHANGES_ON_HIT,
   for id in pairs(source) do supported2[id] = true end
 end
 
--- Numeric dispatch outside STATUS_SETUP/SECONDARY lives in the native
--- engine, damage calculator and effects/hit.lua. Unhandled constants are
--- deliberately absent, even when effect_ids.lua gives them a name.
 local supported3 = {}
 for effect in pairs(E.STATUS_SETUP) do supported3[effect] = true end
 for effect in pairs(E.SECONDARY) do supported3[effect] = true end
@@ -79,7 +71,6 @@ end
 
 local native2 = {}
 for id, row in pairs(Map2.EFFECTS) do native2[id] = row.effect end
--- Native status commands not present in the cross-generation battle map.
 native2.EFFECT_POISON = E.POISON
 native2.EFFECT_BURN = E.WILL_O_WISP
 
@@ -98,8 +89,6 @@ for _, id in ipairs(sortedKeys(native2)) do
   if supported2[id] then append(reverse2, native2[id], id) end
 end
 
--- Gen 1 move-specific dispatch remains observational. In particular, do
--- not publish a new Gen 2 ID for an older fixed-damage/charge/healing arm.
 local inherited = {}
 for _, row in pairs(Map1.MOVES) do inherited[row.effect] = true end
 for effect in pairs(reverse1) do inherited[effect] = true end
@@ -136,7 +125,6 @@ local function nativeId(value, generation)
   if generation == 3 and type(value) == "number" then
     name = nativeNames3[value] or tostring(value)
   elseif type(value) == "string" and value:match("^%d+$") then
-    -- Distinguish a native string from a raw effect byte of the same text.
     name = "string:" .. value
   end
   return "native:" .. generation .. ":" .. tostring(name)
@@ -148,6 +136,10 @@ function Effects.read(value, generation, record)
   if generation ~= 2 and generation ~= 3 then return nil end
   if generation == 2 then
     if nativeOnly2[value] then return value end
+    if type(record) == "table" and record._modEffectId == value and type(value) == "string"
+        and not supported2[value] and not canonical[value] then
+      return value
+    end
     if not supported2[value] then return nativeId(value, generation) end
   end
   local effect = generation == 2 and native2[value] or nil
@@ -156,6 +148,11 @@ function Effects.read(value, generation, record)
     if type(effect) ~= "number" then effect = nil end
   end
   local authored = type(record) == "table" and record._modEffectId
+  if generation == 3 and type(authored) == "string" and effect == E.HIT
+      and not canonical[authored] and E[authored] == nil
+      and not Map1.UNSUPPORTED[authored] and not Map2.UNSUPPORTED[authored] then
+    return authored
+  end
   if authored and canonical[authored] and canonical[authored].effect == effect then return authored end
   local variants = effect and reverse1[effect]
   if variants then
@@ -163,8 +160,6 @@ function Effects.read(value, generation, record)
     for _, id in ipairs(variants) do
       if Map1.EFFECTS[id].chance == probability then return id end
     end
-    -- The secondaryChance extension preserves nonstandard probabilities;
-    -- use a stable spelling when none of the embedded chances matches.
     return variants[1]
   end
   local older = effect and reverse2[effect]
@@ -179,16 +174,13 @@ function Effects.read(value, generation, record)
 end
 
 local function defaultChance(row)
-  -- Table.mapMove makes these guaranteed after-hit commands explicit.
   if row.chance == 0 and (row.effect == E.TRAP or row.effect == E.PAY_DAY) then
     return 100
   end
   return row.chance
 end
 
--- Success: native effect, optional default percentage. Failure: nil, reason.
--- Neither path mutates record or applies move-index overrides from MOVES.
-function Effects.write(id, generation, record)
+function Effects.write(id, generation, record, registered)
   if generation ~= 1 and generation ~= 2 and generation ~= 3 then
     return nil, "unsupported generation"
   end
@@ -210,7 +202,6 @@ function Effects.write(id, generation, record)
         or Map2.EFFECTS[id] or Map2.UNSUPPORTED[id] or E[id] ~= nil then
       return nil, "move effect has no Gen 1 handler: " .. id
     end
-    -- Custom IDs are resolved against the owner's move_effects registry.
     return id
   end
   if nativeOnly2[id] then
@@ -218,6 +209,12 @@ function Effects.write(id, generation, record)
     return nil, "move effect has no Gen 3 handler: " .. id
   end
   local row = canonical[id]
+  if not row and (generation == 2 or generation == 3) and registered and registered(id)
+      and not native2[id] and not Map2.UNSUPPORTED[id]
+      and not Map1.UNSUPPORTED[id] and E[id] == nil then
+    if generation == 3 then return E.HIT end
+    return id
+  end
   if not row then return nil, "unsupported move effect: " .. id end
   if generation == 2 then
     if native2[id] and not supported2[id] then
@@ -225,7 +222,6 @@ function Effects.write(id, generation, record)
     end
     local targets = reverse2[row.effect]
     if not targets then return nil, "move effect has no Gen 2 handler: " .. id end
-    -- Keep a distinct additive native spelling where one was requested.
     local target = supported2[id] and native2[id] == row.effect and id or targets[1]
     return target, defaultChance(row)
   end

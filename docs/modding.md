@@ -6,13 +6,13 @@ The modding book lives on the
 [project wiki](https://github.com/bryanthaboi/gen1recomp/wiki).
 
 - [Getting started](https://github.com/bryanthaboi/gen1recomp/wiki/Getting-Started)
-  — install a mod, write a first one, enable and disable it.
+  - install a mod, write a first one, enable and disable it.
 - [Tutorials](https://github.com/bryanthaboi/gen1recomp/wiki/Tutorials)
-  — twelve dependency-ordered rungs, each a runnable mod.
+  - twelve dependency-ordered rungs, each a runnable mod.
 - [Cookbook](https://github.com/bryanthaboi/gen1recomp/wiki/Cookbook)
-  — task-sized recipes.
+  - task-sized recipes.
 - [Registry reference](https://github.com/bryanthaboi/gen1recomp/wiki/Reference-Registries)
-  — every registry, generated from `src/mods/Schemas.lua`.
+  - every registry, generated from `src/mods/Schemas.lua`.
 
 Regenerate the reference. With no argument it writes in-repo, to
 `docs/modding/reference/registries.md`; name a wiki checkout to write the
@@ -268,7 +268,7 @@ python3 tools/tiled_export.py          # -> build/tiled/ (gitignored)
 
 Open `build/tiled/gen1.tiled-project`, edit any of the 222 maps (or
 `kanto.world` for the stitched overworld), and export with the
-`gen1-mod-export` extension — one map file, or a whole loadable mod folder.
+`gen1-mod-export` extension - one map file, or a whole loadable mod folder.
 An edited vanilla map becomes a `mod.content.maps:patch` carrying only the
 fields that moved; a new map becomes a `:register`. See
 `docs/new-features.md` and the extension's own README.
@@ -655,7 +655,7 @@ rather than the table itself.
 Most registries hand the engine *content*. `render_pipelines` hands it
 *drawing*: a pipeline is a display mode a mod owns, which may replace the
 overworld's world pass with geometry of its own and/or post-process the
-finished image. `mods/voxel_world` is the worked example — a 3D diorama
+finished image. `mods/voxel_world` is the worked example - a 3D diorama
 overworld plus a tilt-shift miniature pass, in about 120 lines of glue over
 its renderer.
 
@@ -686,12 +686,12 @@ Three draw stages, each optional; a record needs at least one:
 | `present` | `(canvas, ctx) -> canvas` | over the whole frame, world and UI alike |
 
 `worldPresent` is the one to reach for when an effect must leave dialog
-boxes and menus crisp — a depth-of-field or colour grade on the world only.
+boxes and menus crisp - a depth-of-field or colour grade on the world only.
 `present` is for effects that genuinely own the screen, like a CRT curve.
 
 `ctx` carries the frame: `state`, `cam`, `vw`/`vh` (world-pixel view),
 `width`/`height` (window pixels), `scale`, `level`, `paletteFor(map)` and
-`spriteColors(map)`. It also carries `ctx.drawFx(project, scale)` — call it
+`spriteColors(map)`. It also carries `ctx.drawFx(project, scale)` - call it
 with your own projection and the engine draws every active field effect
 (the "!" bubble, the Poké Center heal machine, the Fly bird, the fishing
 rod, Rock Tunnel darkness) at its correct anchor under your camera. There
@@ -707,7 +707,7 @@ Three rules worth knowing:
 - **`available` is re-read every frame** and is the only thing that decides
   whether the mode can render at all. Answer `false` on a headless run or a
   driver with no depth canvas and the engine silently keeps the vanilla 2D
-  path — which is why shipping a pipeline enabled is safe.
+  path - which is why shipping a pipeline enabled is safe.
 - **A callback that throws retires its pipeline**, attributed to your mod in
   the manager's error feed, and the frame falls back to 2D. A broken
   renderer costs the player a display mode, never the game.
@@ -779,7 +779,7 @@ mod.content.battle_sprite_scales:register("abra_back", {
 ```
 
 An image-level entry beats the species scale for that one pic, and it is
-the only way to scale a pic that is not species-keyed — the player's
+the only way to scale a pic that is not species-keyed - the player's
 trainer back sprite, held on screen until "Go!", is a bare image path.
 
 The resolution order at draw time is **image-level → species-level →
@@ -970,7 +970,7 @@ animation/messages, forced choices, and every phase that cannot safely be
 checkpointed remain excluded. Exceptions are contained by normal hook isolation
 and fall through without advancing a turn.
 
-Gen 1 trainer encounters also expose `trainer.before_battle` after the
+Trainer encounters on every generation also expose `trainer.before_battle` after the
 challenge text and immediately before battle construction. This lets a mod
 defer the encounter while it collects a player choice through a registered
 screen, then resume with a battle-local view of the save party:
@@ -1053,20 +1053,20 @@ than treating developer mode as configuration.
 
 While developer mode is active on Gen 1:
 
-- `` ` `` (backtick) opens the console overlay — a Lua REPL with `game`,
+- `` ` `` (backtick) opens the console overlay - a Lua REPL with `game`,
   `data` and `mods` in scope. Press `` ` `` again to close it.
 - `F5` hot-reloads mods and asset caches without restarting.
 
 The console understands these verbs (anything else is evaluated as Lua):
 
-- `warp MAP [x y]` — teleport to a map (default cell 5,5).
-- `give ID [n|level]` — add an item (count) or a Pokémon (level).
-- `flag NAME [on|off]` — read or set an event flag.
-- `party` — dump the current party.
-- `mods` — list loaded mods and their state.
-- `reload` — hot-reload mods (same as `F5`).
-- `trace PAT | trace off` — trace events/hooks matching a glob pattern.
-- `help` — list the verbs.
+- `warp MAP [x y]` - teleport to a map (default cell 5,5).
+- `give ID [n|level]` - add an item (count) or a Pokémon (level).
+- `flag NAME [on|off]` - read or set an event flag.
+- `party` - dump the current party.
+- `mods` - list loaded mods and their state.
+- `reload` - hot-reload mods (same as `F5`).
+- `trace PAT | trace off` - trace events/hooks matching a glob pattern.
+- `help` - list the verbs.
 
 ## Tool input and title-menu hooks
 
@@ -1254,10 +1254,11 @@ means different things on different screens: on a battle HUD an opponent's
 level is information about them, on the party and status screens your own
 level is information about you. A mode can hide one and keep the other.
 
-**Gen 1 only for now.** The Gen 2 screens keep their own level readouts and
-do not consult this hook, and neither does the Gen 1 PC box list, where the
-level is part of a row label rather than a drawn field. Both are noted in
-RFC 0019 as follow-ups.
+The hook is raised on Gen 1, Gen 2 and Gen 3 (the Gen 2 party, summary and
+battle screens through `src/ui/LevelDisplay.lua`, the Gen 3 battle healthbox,
+party and summary screens through the same module). The Gen 1 PC box list
+does not consult it, because the level there is part of a row label rather
+than a drawn field.
 
 `core.logic_speed` receives `(next, game)` once per `Game:logicSpeed()` call
 (once per frame), but only on frames where the speed is not locked. Link
@@ -1274,15 +1275,15 @@ result is clamped to the nearest valid `GameSpeed.LEVELS` entry regardless
 of what a subscriber returns, so a bad value (0, negative, `nil`) cannot
 destabilize the fixed-step accumulator. The `--speed`/`POKEPORT_SPEED`
 run-argument override also wins over the hook, but not over the lock.
-Gen 2 and Gen 3 have no hook; their `logicSpeed()` facades report the
-shell's own value, lock included.
+Gen 2 and Gen 3 raise the same hook from `Game2:logicSpeed()` and
+`Game3:logicSpeed()`, with the same lock rules.
 
 Developer mode also arms the mod loader's dev tripwire, which flags mods
 that reach outside their permission set.
 
 ## Battle field residual hook
 
-`battle.field_residual` lets a Gen 1 battle-rule mod request end-of-round
+`battle.field_residual` lets a battle-rule mod request end-of-round
 damage without mutating live battlers. It is guarded and runs after vanilla
 status residuals, before field-token expiry and `battle.turn_ended`. The
 wrapper receives `(next, context)`, calls `next(context)` for the existing
@@ -1421,7 +1422,7 @@ local walk = mod.steps:poll()     -- { steps = n, from = ?, to = ? } or nil
 `available()` is `false` on builds without the bridge (desktop) and for
 mods without the permission, so a probe is always safe. `sync()` asks the
 platform to refresh its count and returns whether there was a bridge to
-ask. `poll()` returns the next delivery for this mod — the engine consumes
+ask. `poll()` returns the next delivery for this mod - the engine consumes
 the native side's pending file itself, each permissioned mod receives its
 own copy of a delivery, and steps are anchored natively so the same walk
 is never delivered twice. Without the permission, `sync` and `poll` raise
@@ -1453,7 +1454,7 @@ takes `accept` (a request Accept header) and `maxSeconds` (clamped to 30).
 `poll(handle)` returns `{ status, body, err, progress }` where `status` is
 `"pending"`, `"ok"`, `"error"` or `"cancelled"`; it is a copy, and it never
 blocks, so calling it every frame is the intended use. `release(handle)`
-frees a finished job — do it, or you will hit the ceiling. `cancel(handle)`
+frees a finished job - do it, or you will hit the ceiling. `cancel(handle)`
 drops a result you no longer want. `available()` is `false` when the build
 has no transport and for mods without the permission, so a probe is safe.
 
@@ -1512,7 +1513,7 @@ response body is never returned to the mod.
 ## Background jobs
 
 `mod.fetch` covers work waiting on a server. `mod.job` covers work waiting on
-the CPU — generating a map, crunching a table, anything that would otherwise
+the CPU - generating a map, crunching a table, anything that would otherwise
 stall a frame. It is behind the `background` permission in `manifest.json`.
 
 Ship the job as its own file inside your mod:
@@ -1548,7 +1549,7 @@ permission, so a probe is always safe.
 
 - **Plain data in, plain data out.** Numbers, strings, booleans and tables of
   them. A function, userdata, a cycle or a table key that is not a string or
-  number is refused at your `run` call with a reason. Nothing is shared —
+  number is refused at your `run` call with a reason. Nothing is shared -
   your argument is snapshotted, and mutating the original afterwards does not
   reach the job.
 - **No engine API, no game state, no storage.** `require` is refused inside a
@@ -1561,15 +1562,15 @@ permission, so a probe is always safe.
   `nil` and a reason until you release one.
 - **The budget bounds how long YOU wait, not how long the work runs.** Past
   `maxSeconds`, `poll` reports an error and the result is dropped if it ever
-  arrives — but the thread runs to its own end. There is no way to stop a
+  arrives - but the thread runs to its own end. There is no way to stop a
   LÖVE thread from outside, and every attempt to stop one from inside was
   worse than the disease (a debug hook does not reliably interrupt LuaJIT,
   and raising from one wedged the whole process). `cancel(handle)` is the
   same deal: it drops the result, it does not stop the work.
 
   So **write jobs that terminate.** A job with an infinite loop will keep one
-  core busy until the game closes. It will not freeze the game — the main
-  thread stays responsive and quitting still works — but nothing will reclaim
+  core busy until the game closes. It will not freeze the game - the main
+  thread stays responsive and quitting still works - but nothing will reclaim
   that core in the meantime.
 
 Your job script runs in the same sandbox your entry file does, so `io`, `os`,
@@ -1617,7 +1618,7 @@ engine-owned facility, not a compat shim -- for HTTP that facility is
 
 ## Portable API 3
 
-Set `api` to `3` and declare the games your mod supports. **Gen 1 is the source of truth for the shared API.** The public contract is additive: Gen 2 extends Gen 1, and Gen 3 extends Gen 2; inherited names, shapes and units remain stable. Gen 2 and Gen 3 adapters follow its names, record shapes and units. Native game mechanics, content IDs, maps and assets still determine which features are available.
+A mod opts in with `"api": 3` and lists the games it claims. One entry file then runs on every claimed game with the same names, record shapes and units. **Gen 1 is the source of truth**: Gen 2 and Gen 3 add capabilities and keep the inherited contracts. Shared names are registrable everywhere, but a feature only does something where the native game has it; the API never invents gameplay a cart lacks (no Gen 3 phone, radio or apricorns).
 
 ```json
 {
@@ -1630,161 +1631,138 @@ Set `api` to `3` and declare the games your mod supports. **Gen 1 is the source 
 }
 ```
 
-Existing API 1 and API 2 manifests retain their established native contracts. The preceding reference sections describe those contracts. The [upstream mod object](https://github.com/bryanthaboi/gen1recomp/wiki/Reference-Mod-Object), [registry catalog](https://github.com/bryanthaboi/gen1recomp/wiki/Reference-Registries), [script commands](https://github.com/bryanthaboi/gen1recomp/wiki/Reference-Commands) and [lifecycle](https://github.com/bryanthaboi/gen1recomp/wiki/Concepts-Lifecycle) are the reference for Gen 1 conventions. Those wiki pages currently document API 2; this section documents the new API 3 boundary.
+`api` 1 and `api` 2 mods behave exactly as before; the sections above describe their contracts. The engine's `modApi` is 3 (`src/core/Version.lua`). API 3 is a per-manifest opt-in, not a rewrite of the `mod` object: `mod.content`, `mod.events`, `mod.hooks`, `mod.world` and `mod.battle` keep their names and are replaced by portable services for `api >= 3` mods only.
+
+[Gen 2 compatibility](mod-api-gen2-compat.md) and [Gen 3 compatibility](mod-api-gen3-compat.md) list what each generation serves, game by game.
 
 ### One entry file
 
-Content changes belong in the entry chunk, before the loader freezes registries:
+The entry chunk may either use `local mod = ...` or return `function(mod) ... end`. Content changes belong there, before the loader freezes the registries. The runnable [example](../mods/examples/portable_api/main.lua) and [manifest](../mods/examples/portable_api/manifest.json) show the pattern.
 
 ```lua
-local mod = ...
-
-local mew = mod.content.pokemon:get("MEW")
-if mew then
-  mod.content.pokemon:patch("MEW", {
-    baseStats = { attack = math.min(255, mew.baseStats.attack + 10) },
-  })
-end
-
-if mod.content.moves:get("TACKLE") then
-  mod.content.moves:patch("TACKLE", { power = 45 })
-end
-if mod.content.items:get("POTION") then
-  mod.content.items:patch("POTION", { price = 100 })
+return function(mod)
+  if mod.content.moves:get("TACKLE") then
+    mod.content.moves:patch("TACKLE", { power = 45 })
+  end
 end
 ```
 
-The runnable [example manifest](../mods/examples/portable_api/manifest.json) and [entry file](../mods/examples/portable_api/main.lua) use this pattern. Copy that example directory into your mods directory to try it.
+### Services behind the facade
+
+API 3 routes the `mod` object through these engine services. Authors never require them.
+
+| Service | Facade | What it does |
+| --- | --- | --- |
+| `UnifiedContent` | `mod.content`, `mod.datasets` | Canonical records for the core registries; native shapes for the rest. |
+| `UnifiedRecords` | records inside `content`, hooks and events | Converts species, move, item, trainer and encounter rows between the Gen 1 shape and the native one. |
+| `UnifiedIds` | ids inside records | Gen 1 spellings for species (`FARFETCHD`, `MR_MIME`) and Gen 3 types (`PSYCHIC`, `MYSTERY`). |
+| `UnifiedEffects` | `effect` on a move | Maps Gen 1 effect IDs to the native effect; an effect with no verified mapping is refused. |
+| `UnifiedCallbacks` | `mod.events`, `mod.hooks`, `mod:supports` | Boundary conversion of record-valued payloads; the capability query. |
+| `UnifiedWorld` | `mod.world` | The common world method set. |
+| `UnifiedBattle` | `mod.battle` | Snapshots and intents. |
+| `UnifiedScripts` | `mod.world:queueScript` | Portable script rows. |
 
 ### Shared records
 
-The core portable registries are `pokemon`, `moves`, `items`, `trainers` and `encounters`. They retain `register`, `override`, `patch`, `remove`, `get` and `each`; `has` is also available. Reads and iteration return detached records. Apply changes through a write method.
+The portable registries are `pokemon`, `moves`, `items`, `trainers` and `encounters`. They keep `register`, `override`, `patch`, `remove`, `get` and `each`, and add `has`. Reads and iteration return detached records; apply changes through a write method.
 
-Species definitions use:
+- Species: `baseStats.hp`, `attack`, `defense`, `speed`, `special`; `level1Moves`, `learnset = { { level = 9, move = "TACKLE" } }`, `evolutions = { { method = "LEVEL", level = 16, species = "CHARMELEON" } }`; string species, move, item, type and growth-rate IDs.
+- Gen 2 `levelMoves` and `into`, and Gen 3 numeric tables, are translated to that shape. Writing `special` sets both later Special stats; optional `specialAttack` and `specialDefense` carry the split, and Gen 1 requires them equal.
+- Moves use Gen 1 effect IDs such as `NO_ADDITIONAL_EFFECT`.
+- Trainers: `parties = { { { species = "MEW", level = 5 } } }` plus `partyNames`. Encounter slots: `{ species = "MEW", level = 5 }`; a shared encounter write applies to every Gen 2 time of day.
+- Text keeps the Gen 1 control characters with symbolic placeholders such as `{PLAYER}`.
+- A new registration needs no Gen 3 storage index; the adapter allocates a free slot and checks explicit collisions.
 
-- `baseStats.hp`, `attack`, `defense`, `speed` and `special`.
-- `level1Moves = { "POUND" }` for starting moves, followed by `learnset = { { level = 9, move = "TACKLE" }, ... }`.
-- `evolutions = { { method = "LEVEL", level = 16, species = "CHARMELEON" } }`.
-- String species, move, item, type and growth-rate IDs.
+`patch` keeps untouched fields; lists replace or use `__append` / `__prepend`; `mod.DELETE` deletes. An operation the selected game cannot represent returns `nil, reason` before anything is recorded. A malformed record raises a schema error attributed to the mod, and a failed entry chunk rolls back its contributions. The `native` extension on a record is read-only data for diagnostics.
 
-The boundary preserves Gen 1 records and translates Gen 2 `levelMoves` and `into`, plus Gen 3 numeric tables, into that shape. Writing common `special` sets both later-generation Special stats. Optional `specialAttack` and `specialDefense` extensions represent later split mechanics; Gen 1 requires equal values. Evolution methods and conditions must be representable by the selected game.
+Registries whose Gen 2 or Gen 3 shape differs from Gen 1 and that have no canonical adapter (`move_effects`, `statuses`, `ai_classes`, `battle_anims`, `palettes`, `sprites`, `icons`, `balls` and similar) pass the native shape through unchanged: `api` 3 and `api` 2 mods both write them against the native shape, and `mod:supports` answers true on every game that has a native target. Registries a game has no native target for report `unsupported`. Per-game routing is in the [registry reference](modding/reference/registries.md) (Gold) and [Gen 3 compat](mod-api-gen3-compat.md#registries).
 
-Move effects use Gen 1 IDs such as `NO_ADDITIONAL_EFFECT` and `SLEEP_EFFECT`. An effect without a verified native mapping is explicitly unsupported. Trainers use `parties = { { { species = "MEW", level = 5 } } }` and a separate `partyNames` list. Encounter slots use `{ species = "MEW", level = 5 }`; later level ranges and time-of-day tables are extensions. Shared encounter writes apply across Gen 2 times of day. Text reads preserve Gen 1 newline, form-feed and vertical-tab controls with symbolic placeholders such as `{PLAYER}`.
-
-New canonical registrations do not require authors to choose a Gen 3 storage index. The adapter allocates a free native slot and checks explicit index collisions. Native-only required defaults are supplied by the adapter. Artwork and engine limits still apply.
-
-`patch` preserves untouched fields. Lists replace or use `__append`/`__prepend`; `mod.DELETE` requests deletion. Unsupported or unrepresentable operations return `nil, reason` before recording the change. Malformed records raise a schema error attributed to the mod. A failed entry chunk rolls back its contributions.
-
-A record's `native` extension is observational data for migration and diagnostics. Changing that extension is not a portable write operation. Game-specific identifiers retain their game's namespace; feature checks do not guarantee that a particular map, species or item exists.
-
-### Feature checks and readiness
+### Capability query
 
 ```lua
-local available, reason = mod:supports("content", "pokemon")
+local ok, reason = mod:supports("content", "pokemon")
 local canFly = mod:supports("world", "flyTo")
 local hasHook = mod:supports("hooks", "core.logic_speed")
 local hasEvent = mod:supports("events", "world.stepped")
 ```
 
-The surfaces are `content`, `world`, `hooks` and `events`. Each content handle also has `supports()` and an `available` boolean. Content and world capabilities describe implemented interfaces; current data or game state may still prevent an action. Hook and event capabilities describe the public catalog by introduction generation: Gen 1 names are inherited by Gen 2 and Gen 3, and Gen 2 additions are inherited by Gen 3. They do not certify native call-site coverage.
+Surfaces are `content`, `world`, `hooks` and `events`. Every content handle also has `supports()` and an `available` boolean. Content and world answers describe implemented interfaces; game state may still refuse a call.
 
-For example, `pokemon.level_visible` and `battle.field_residual` belong to the Gen 1 baseline; `shiny.roll` and `gender.roll` are Gen 2 additions. Known catalog names may be registered through `hooks:wrap`, `events:on` and `events:once` in every generation, including before their introduction. As the [wiki hook reference](https://github.com/bryanthaboi/gen1recomp/wiki/Reference-Hooks#gen-2-gold-hooks) explains, a wrapper for a Gold-only mechanic registered on Red simply never fires. Unknown engine callback names still raise a clear error. Some native registries, script commands and artwork fields have no portable adapter; handle explicit unsupported results. Native ports of inherited callbacks remain in progress, so catalog membership or successful subscription alone does not establish that a callback fires in a particular engine.
+For `hooks` and `events` the answer is **native per version**: a name returns true only on the versions that have a call site. Names with a call site in every generation (`pokemon.level_visible`, `battle.field_residual`, `core.logic_speed`, `trainer.before_battle`) are true on every game, and a name raised in only some generations answers true for those generations alone (`battle.style`, `catch.nickname` and `catch.party_full` are Gen 1 only; `transition.style` is Gen 1 and Gen 2; `mod.options_changed` is true everywhere); Gen 2 additions follow the cart (`phone.call_received`, `radio.channel`, `phone.contact_list` and the intro cinema are Gold, Silver and Crystal only; `shiny.roll`, `gender.roll`, `held_item.trigger`, `breeding.compatibility`, `egg.hatched`, `happiness.changed`, `pokerus.infected` and the roamer events are true on Gen 2 and Gen 3). Custom `mod.<id>.*` events are always true.
 
-World and battle handles can be captured at entry time. They resolve the current game when used, including after readiness and reset. Calls made without an active world, save or battle return `nil, reason`.
+`hooks:wrap`, `events:on` and `events:once` accept any catalogued name on any game, so one source file loads everywhere; a subscription to a name the game does not raise simply never fires. Unknown names raise. Check `mod:supports` before relying on a callback.
+
+World and battle handles can be captured at entry time and resolve the current game when used. A call with no active world, save or battle returns `nil, reason`.
 
 ### World services
 
-The common method set includes position, party reads/reordering, field actions, flying, warps, flags, encounters, block access, NPC operations, scripts and wild battles. Actions validate arguments and native busy state before starting work.
+The method set: `current`, `party`, `canReorderParty`, `reorderParty`, `availableFieldActions`, `useFieldAction`, `canFly`, `flyTo`, `mapOverview`, `warpTo`, `toggleObject`, `setFlag`, `getFlag`, `effectiveEncounters`, `activeBlockAt`, `replaceBlock`, `spawnNpc`, `liveMaps`, `removeNpc`, `npc`, `queueScript`, `startWildBattle`, `invalidateMap` and `overworld`. Actions validate arguments and native busy state before starting.
 
 ```lua
-local world = mod.world
 mod.events:once("world.stepped", function()
-  local ok, reason = world:setFlag("mod:visited", true)
+  local ok, reason = mod.world:setFlag("mod:visited", true)
   if not ok then mod.log:warn("%s", reason) end
 end)
 ```
 
-`mod:<key>` belongs to the current mod. These boolean flags persist in its save bucket across generations, independently of native event bitfields. Symbolic native flags require authoritative constants for the selected version; numeric native IDs remain game-specific. Crystal does not reuse Gold's symbolic flag mapping.
+- `mod:<key>` flags are private booleans in the mod's save bucket on every generation. Symbolic native flags need authoritative constants for the version; Crystal does not reuse Gold's mapping.
+- `party()` returns detached Pokémon with `nickname`, `stats.special`, string IDs, short statuses (`SLP`, `PSN`, `BRN`, `FRZ`, `PAR`) and moves as `{ id, pp, maxPp }`.
+- `activeBlockAt(mapId, x, y)` returns a native block ID plus `tileSize`, `cellSize`, `coordinateBase` and `kind`. Blocks are 32 px on Gen 1 and 2 and 16 px on Gen 3, zero-based. It is never a collision byte.
+- `spawnNpc(mapId, objDef)` takes a detached `maps[].objects` shape and returns a session ID `mapId .. "_obj_" .. index`; `npc(mapId, id)` resolves it. Handles expose movement, facing, placement, passability and `setAppearance(spriteId)`. `removeNpc` removes only the calling mod's runtime NPCs. Runtime NPCs survive map reloads in a session but are not saved; respawn on load. A permanent NPC belongs in a map content patch.
+- `world.talk` receives the native game or overworld and the target; call `next(gameOrWorld, target)` for the normal interaction (it runs at most once). On Gen 3 `scriptKey` runs the native script VM; Gen 1 talk scripts through this path are refused with an error.
 
-`world:party()` returns detached runtime Pokémon with Gen 1 `nickname`, `stats.special`, string species/move/item IDs, short status IDs (`SLP`, `PSN`, `BRN`, `FRZ`, `PAR`) and moves shaped as `{ id, pp, maxPp }`. Split Special and held items are later-generation extensions. Use `world:reorderParty(fromSlot, toSlot)` to change ordering.
+### Portable scripts
 
-`world:activeBlockAt(mapId, x, y)` returns a native block/metatile ID and metadata containing `tileSize`, `cellSize`, `coordinateBase` and `kind`. Coordinates are zero-based native blocks: 32 pixels in Gen 1/2 and 16 pixels in Gen 3. The returned ID is never a collision-behavior byte. `world:current().block` carries the same metadata.
+`queueScript(rows, { onDone = function(ok, reason) end })` validates the whole list before running anything, waits for native completion between asynchronous rows, reports completion once and cancels with a replaced session. Rows are `{ verb, arg... }`; `text`, `setflag` and `clearflag` are aliases of `show_text`, `set_flag` and `clear_flag`. At most 1024 rows.
 
-The shared method names are `current`, `party`, `canReorderParty`, `reorderParty`, `availableFieldActions`, `useFieldAction`, `canFly`, `flyTo`, `mapOverview`, `warpTo`, `toggleObject`, `setFlag`, `getFlag`, `effectiveEncounters`, `activeBlockAt`, `replaceBlock`, `spawnNpc`, `liveMaps`, `removeNpc`, `npc`, `queueScript`, `startWildBattle`, `invalidateMap` and `overworld`. Gen 3 runtime NPCs use the native object pool and its update, draw, collision and interaction paths. Raw `overworld` and NPC definitions retain native internals.
+Common rows, available on all three generations:
 
-Follow the Gen 1 [world facade](https://github.com/bryanthaboi/gen1recomp/wiki/Reference-Mod-Object#world-facade) and [object ID convention](https://github.com/bryanthaboi/gen1recomp/wiki/Concepts-Data-Model#map-objects-and-object-ids): `spawnNpc(mapId, objDef)` accepts a detached definition shaped like `maps[].objects` and returns a stable session ID of the form `mapId .. "_obj_" .. index`. Resolve it with `npc(mapId, id)`; `handle.id` is that public ID, including on Gen 3 where the native local ID is separate. Map and sprite IDs must exist in the selected game's data.
-
-```lua
-local function spawnVisitor(mapId, spriteId)
-  local id, reason = mod.world:spawnNpc(mapId, {
-    x = 5, y = 7, sprite = spriteId, facing = "down",
-    text = "Hello!",
-  })
-  if not id then return nil, reason end
-  return mod.world:npc(mapId, id)
-end
-```
-
-Call this when the world is ready and the target map is live. Handles expose movement, facing, placement, passability and `setAppearance(spriteId)` using registered artwork. API 3 `removeNpc(handle.id)` removes only a runtime NPC owned by the calling mod; imported map objects and another mod's actors are refused. It does not hide a Gen 3 template object or change its persistent hide flag. Runtime definitions survive map reloads and revisits within a session, but are not serialized. Respawn after a new session or save load; keep map-entry handlers idempotent to avoid duplicates. A permanent NPC belongs in a map content patch.
-
-NPC definitions may supply a text ID or literal `text`. Gen 3 runtime interaction resolves native text and opens the native message box, facing and freezing the actor until completion. `world.talk` receives the native game/overworld and target object; call `next(gameOrWorld, target)` to continue normal interaction, or omit it to handle the talk yourself. The vanilla continuation runs at most once. Gen 3 `scriptKey` uses the native script VM; registered Gen 1 talk scripts still require a native runner bridge and currently report an error instead of executing. This limitation is separate from callback-name registration.
-
-Use `queueScript(rows, { onDone = function(ok, reason) ... end })` with these portable row shapes:
-
-| Row | Meaning |
+| Group | Verbs |
 | --- | --- |
-| `{ "show_text", "Hello!" }` | Show literal dialogue. |
-| `{ "set_flag", "mod:visited" }` | Set a private boolean flag. |
-| `{ "clear_flag", "mod:visited" }` | Clear it. |
-| `{ "warp", mapId, x, y, facing }` | Warp; `facing` is optional. Coordinates are native movement cells. |
-| `{ "start_battle", "wild", "MEW", 5 }` | Start a wild battle. |
+| Flow | `label`, `jump`, `jump_if_true`, `jump_if_false`, `end`, `wait`, `wait_flag` |
+| Checks | `check_flag`, `check_item`, `check_money`, `check_dex_owned`, `check_battle_result` |
+| State | `set_flag`, `clear_flag`, `set_field`, `set_option`, `give_money`, `take_money`, `take_coins`, `give_item`, `take_item`, `heal_party`, `mark_seen`, `give_pokemon` |
+| Dialogue | `show_text`, `ask`, `choice` |
+| World | `warp`, `move_player`, `move_npc`, `move_npc_to`, `face`, `face_object`, `face_npc`, `face_player`, `face_player_dir`, `place_npc`, `show_object`, `hide_object`, `replace_block` |
+| Battle and shops | `start_battle`, `static_battle`, `open_mart` |
+| Audio | `play_sound`, `play_music`, `stop_music`, `play_cry`, `play_once`, `text_sound`, `wait_sound`, `engage_music`, `fade_music`, `play_default_music`, `remember_outdoor` |
 
-The entire list is validated before execution. The service waits for native completion between asynchronous actions, reports completion once, and cancels work tied to a replaced session. Native script bytecode remains version-specific. For direct actions use `warpTo(mapId, x, y, facing, options)` or `startWildBattle(species, level, onDone)`; native warp options have explicit generation limits.
+Adapted verbs depend on what the native game can do:
+
+| Verb | Gen 1 | Gen 2 | Gen 3 |
+| --- | --- | --- | --- |
+| `emote`, `fade`, `walk_npc`, `text_opts`, `push_screen`, `trade` | native command set if it has the verb | adapted | adapted |
+| `pan_camera`, `march_in_place` | native command set if it has the verb | native command set if it has the verb | adapted |
+
+Gen 1 also runs any verb its native `Commands` registry resolves, including commands a mod registered. Anything else is refused with `unsupported script command: <verb>` or `native adapter unavailable: <verb>` before the first row runs. `text_opts` on Gen 2 and Gen 3 accepts only `auto`; `push_screen` needs a screen registered in `content.screens`; `give_item` and `static_battle` resolve species and item IDs through the selected game's data, and an unknown ID refuses the list. Native script bytecode stays version-specific.
+
+For single actions use `warpTo(mapId, x, y, facing, options)` or `startWildBattle(species, level, onDone)`; warp options (`arrive`, `onDone`, `keepMusic`) are read only for `api` 3 mods and have generation limits; `api` 1 and 2 mods keep the legacy `warpTo` contract, which ignores `opts`.
 
 ### Battle snapshots and intents
 
 ```lua
 local snapshot = mod.battle:snapshot()
 if snapshot and snapshot.prompt == "menu" then
-  local ok, reason = mod.battle:submit({
-    id = 1,
-    revision = snapshot.revision,
-    kind = "menu",
-    choice = "fight",
-  })
+  mod.battle:submit({ id = 1, revision = snapshot.revision, kind = "menu", choice = "fight" })
 end
 ```
 
-Use a fresh, increasing intent ID for each action. Each mod owns its sequence. Native prompt, stale-revision and replay validation still apply across provider changes.
-
-Snapshots have the shared `player`, `enemy`, `party`, `moves`, `items`, `revision`, `prompt`, `turn` and `catchable` fields, plus `double`, `active`, `battlers` and `targets`. Singles use battler IDs 0 and 1; Gen 3 doubles retain IDs 0 through 3. Target lists are empty outside target selection.
-
-For an available capture preview, an item's `catchChance` is a percentage from 0 to 100, following Gen 1. Reading it does not roll RNG or run a catch attempt. Native Safari, Mimic and doubles features remain optional mechanics. Snapshot mutation does not change the battle.
+Use a fresh, increasing intent ID per mod; native prompt, stale-revision and replay checks still apply. Snapshots have `player`, `enemy`, `party`, `moves`, `items`, `revision`, `prompt`, `turn`, `catchable`, plus `double`, `active`, `battlers` and `targets`. Singles use battler IDs 0 and 1; Gen 3 doubles use 0 through 3; `targets` is empty outside target selection. An item's `catchChance` is a 0 to 100 percentage and reading it rolls nothing. Mutating a snapshot does not change the battle.
 
 ### Hooks and events
 
-Keep the familiar `mod.hooks:wrap(name, function(next, ...) ... end)` and `mod.events:on/once` forms. API 3 adapts supported Pokémon records and identifiers at the callback boundary, including mutable `pokemon.before_give` and record-valued encounter/party hooks.
+`mod.hooks:wrap(name, function(next, ...) end)` and `mod.events:on/once` keep their forms. API 3 converts record-valued payloads at the boundary (including mutable `pokemon.before_give`). Priorities, unsubscribe closures, owner rollback and the run-vanilla-at-most-once rule are unchanged. Game, battle and context handles stay native. A mod may subscribe to another mod's events but only emit under its own `mod.<id>.*` prefix; engine events cannot be forged. The start-menu hook exposes executable `onSelect` rows on every generation.
 
-Priorities, unsubscribe closures, owner rollback and the rule that vanilla runs at most once remain in effect. Native game/battle handles and explicitly native metadata are escape hatches with generation-specific internals.
+### Screens on Gen 3
 
-Mods may subscribe to another mod's custom events. Emission is restricted to the emitter's own `mod.<id>.*` namespace. Engine events cannot be forged.
+`mod.ui.push(game, id, ...)` pushes a screen registered in `content.screens`. The Gen 3 bridge is what an `api` 3 mod gets from `mod.ui` (`ModUI.forApi`); `api` 1 and 2 mods keep the Screens-based `push` and the Gen 1 `TextBox`. Gen 3 has no builtin Gen 1 screens, so an unregistered id raises. A screen state table (`enter`, `update`, `draw`, `exit`, optional `isOpaque`) draws into the 160x144 interior of the 240x160 GBA frame, translated to (40, 8); set `gbaCanvas = true` on the state to draw in the full 240x160 space instead. `screen.pushed` and `screen.popped` are raised.
 
-The start-menu hook exposes executable `onSelect` rows across generations. Gen 3 retains legacy ID-only rows, and invalid hook results preserve the native menu.
+`mod.ui.TextBox.new(game, text, onDone, opts)` opens the native message window. `opts.choice` and `opts.stay` raise an error on Gen 3; use the `ask` or `choice` script rows for questions.
 
 ### Testing a portable mod
-
-Run the fixture SDK suite from the repository root:
 
 ```sh
 luajit tests/run_modkit.lua
 ```
 
-For the engine's canonical cases without scanning installed user mods:
-
-```sh
-luajit -e 'arg[-1]="luajit";package.path="./?.lua;./?/init.lua;"..package.path;require("tests.tier_runner").main({"tests/modkit/cases"},"modkit")'
-```
-
-Use the same mod body against all claimed versions. Assert clean loader results and native data changes, unsupported results, rollback, frozen content and captured service handles. Headless fixtures do not establish visual acceptance or that an installed game process loaded the new code.
-
-Keep callback catalog checks separate from native behavior checks. Registering known hooks and events with the same source across all 11 versions, checking capability introductions, unsubscribe and owner rollback, or manually invoking the callback bus establishes the registration contract. Native coverage requires exercising the actual engine call site and checking its payload and effects. For runtime NPCs, check native pool membership, movement/collision, interaction and owner-scoped removal as well as reload and session cleanup; a returned ID alone does not establish native behavior.
+Run the same body against every claimed version and assert the loader result, native data changes, unsupported results, rollback and frozen content. Registering a callback only proves the registration contract; native coverage needs the real call site and its payload. For runtime NPCs also check pool membership, collision, interaction, owner-scoped removal and session cleanup.
