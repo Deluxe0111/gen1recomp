@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.92",
+          "date": "2026-10-20",
+          "size": 44589605,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.92/gen1recomp++-0.3.92-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2988 Fractional Scaling Support (Gen-2)\n- #3011 Mods can't register Gold scripts (map_scripts is off on Gen 2)\n- #3013 Gen2: a species a mod registers technically doesn't show in the Pokédex\n- #3016 Crash during any battle\n- #3017 Boat to Dewport is slow.\n- #3018 (Sapphire) Crash when using item finder\n- #3021 Shown Pokemon don't get their palette in redpp\n- #3022 (Firered) Ice reflection covers rock\n- #3024 (Firered) NPCs at the Ember Spa are standing on the water rather than in it\n- #3025 (Firered) Pausing also pauses water animations\n- #3026 (Firered) Bike is useable when surfing\n- #3027 [Emerald] Scientists doesn't say the location of Groundon/Kyogre\n- #3028 [Emerald] Multi-battle in battle tower crash before start\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.91",
           "date": "2026-10-19",
           "size": 44586417,
