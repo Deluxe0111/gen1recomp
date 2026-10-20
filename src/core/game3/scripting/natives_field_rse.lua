@@ -911,6 +911,8 @@ local STORY = {
     local ListMenu = require("src.core.game3.scripting.natives_listmenu")
     local copy = { keepOpen = false }
     for k, v in pairs(layout) do copy[k] = v end
+    -- pokeemerald/src/field_specials.c:2570
+    copy.width = nil
     copy.exchangeMenuId = id
     return ListMenu.presentItems(ctx, "scroll_multichoice", labels, copy, function(index)
       Rse.setSpecialVar(ctx, varId("VAR_RESULT"), index)

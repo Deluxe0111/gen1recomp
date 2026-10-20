@@ -499,20 +499,31 @@ function ItemUse.useBikeRse(session, id, BikeRse)
   return false, "bike", not_the_time(session)
 end
 
+-- pokefirered/src/bike.c:289 IsBikingDisallowedByPlayer
+local function biking_disallowed_by_player(Player)
+  if Player.surfing or Player.underwater then return true end
+  local x, y = Player.cellX, Player.cellY
+  if Player.moving then x, y = Player.targetX, Player.targetY end
+  local Collision = require("src.core.game3.collision")
+  local beh = Collision.behavior and Collision.behavior(x, y)
+  -- pokefirered/src/bike.c:263 MetatileBehaviorForbidsBiking
+  return beh ~= nil and beh == require("src.core.game3.mb").id("RUNNING_DISALLOWED")
+end
+
 -- pokefirered/src/item_use.c:253 FieldUseFunc_Bike
 function ItemUse.useBike(session, id)
   local BikeRse = require("src.core.game3.bike").rse(session)
   if BikeRse then return ItemUse.useBikeRse(session, id, BikeRse) end
   local Player = require("src.core.game3.player")
   if Player.biking then
-    -- pokefirered/src/item_use.c:261: If already on bike, cannot dismount on cycling road
+    -- pokefirered/src/item_use.c:261
     if Player.isOnCyclingRoad and Player.isOnCyclingRoad(session) then
       return false, "bike", cant_dismount_bike_text()
     end
     -- pokefirered/src/item_use.c:267
     local allowed = map_header_flag(session, "bikingAllowed")
     if allowed == nil then allowed = is_outdoor(session) end
-    if not allowed then return false, "bike", not_the_time(session) end
+    if not allowed or biking_disallowed_by_player(Player) then return false, "bike", not_the_time(session) end
     Player.biking = false
     if session then session.biking = false end
     local Runtime = package.loaded["src.core.game3.runtime"]
@@ -526,10 +537,10 @@ function ItemUse.useBike(session, id)
     require("src.core.game3.audio").bikeMusic(false)
     return true, "bike", nil
   else
-    -- pokefirered/src/overworld.c:948 Overworld_IsBikingAllowed: Mounting only allowed where biking is permitted
+    -- pokefirered/src/item_use.c:267
     local biking = map_header_flag(session, "bikingAllowed")
     if biking == nil then biking = is_outdoor(session) end
-    if not biking then
+    if not biking or biking_disallowed_by_player(Player) then
       return false, "bike", not_the_time(session)
     end
     pcall(function()
