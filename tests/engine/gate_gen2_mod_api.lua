@@ -145,7 +145,8 @@ for name, path in pairs({ maps = "gen2Maps", tilesets = "gen2Tilesets",
                           item_effects = "gen2ItemEffects",
                           balls = "gen2Balls",
                           ai_classes = "gen2AiClasses",
-                          evolution_methods = "gen2EvolutionMethods" }) do
+                          evolution_methods = "gen2EvolutionMethods",
+                          map_scripts = "gen2Scripts" }) do
   local spec = Schemas.REGISTRIES[name]
   T.check(spec ~= nil, "catalog still has registry: " .. name)
   T.eq(Schemas.targetFor(name, spec, 2), path,
@@ -159,7 +160,7 @@ end
 
 -- The mirror set: registries that exist because GOLD does.  They carry no
 -- Gen 1 target at all, so the routed path is the only path they ever have, and
--- Schemas.GEN1 gates them on Red the way Schemas.GEN2 gates `map_scripts` on Gold.
+-- Schemas.GEN1 gates them on Red the way Schemas.GEN2 gates `rulesets` on Gold.
 -- Each is held to a live consumer, which is the claim that matters: a routed
 -- registry nothing reads is the silent no-op the whole routing table exists to
 -- prevent.  The per-consumer cases are in
@@ -215,11 +216,7 @@ end
 -- (src/ui/gen2/BattleTransition.lua) keys STYLES as a boolean SET of the four
 -- cart wipes rather than the { frames, draw, sound, flash } record this
 -- registry carries, and has no styleDef lookup a mod id could reach.
---
--- map_scripts is the one genuine script-side gap left: src/script/gen2/Vm.lua
--- runs the cart's bytecode out of data.gen2Scripts keyed by ROM pointer, and a
--- Lua row list merged into that pool is not something the VM can run.
-for _, name in ipairs({ "map_scripts", "rulesets", "transitions",
+for _, name in ipairs({ "rulesets", "transitions",
                         "field", "text_pointers", "link_fields" }) do
   local spec = Schemas.REGISTRIES[name]
   T.check(spec ~= nil, "catalog still has registry: " .. name)

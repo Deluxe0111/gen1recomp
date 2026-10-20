@@ -14,16 +14,16 @@ The short version, for an author deciding what to write:
 - **Every registry name, hook name and event name means the same thing in both
   games.** Nothing is prefixed, renamed or repurposed per generation. Where Gen
   2 genuinely carries more, the record or the payload gains a *field*.
-- **40 of the 46 registries are available on Gold.** 17 keep their Gen 1 target
+- **42 of the 47 registries are available on Gold.** 17 keep their Gen 1 target
   outright (`commands`, `tokens`, `growth_rates`, `battle_sprite_scales` and
-  `render_pipelines` among them), 16 route to a Gen 2 table under the same
+  `render_pipelines` among them), 18 route to a Gen 2 table under the same
   name, 6 are Gen 2-only systems Red has no counterpart for, and `migrations`
-  is a code registry with no data target in either game. The other 6 are gated,
+  is a code registry with no data target in either game. The other 5 are gated,
   and are listed below with the consumer change each one still needs.
 - **A registry with no home in a generation is reported, never silently
   merged.** The write is taken, dropped, and named once per mod in the same
   error feed the mod manager shows -- in both directions, so a Red boot writing
-  to `decorations` is told exactly as a Gold boot writing to `map_scripts` is.
+  to `decorations` is told exactly as a Gold boot writing to `rulesets` is.
 - **40 event names and 44 hook names have a call site in both generations**, so
   one subscription serves both games. `tests/engine/gate_gen2_mod_api.lua`
   reads those names back out of the source and fails if a site is renamed or
@@ -368,7 +368,7 @@ carries no `multiplier`, so seeding Red's would leave Gold's x1.5 reading nil.
 counterpart for, so there is no Gen 1 table to share and none of these carries
 a Gen 1 target at all. The routed Gen 2 path is their only home, and
 `Schemas.GEN1` gates them on a Red boot the way `Schemas.GEN2` gates
-`map_scripts` on a Gold one -- reported, not silently merged.
+`rulesets` on a Gold one -- reported, not silently merged.
 
 | registry | id space | who reads it |
 | --- | --- | --- |
@@ -768,8 +768,7 @@ fatal: a mod that supports both generations registers its Gen 1 content
 unconditionally and still loads the half that applies. The report is worded
 from the boot's own generation, because the gating runs both ways.
 
-`rulesets`, `transitions`, `field`, `text_pointers`, `link_fields`,
-`map_scripts`.
+`rulesets`, `transitions`, `field`, `text_pointers`, `link_fields`.
 
 `Schemas.GEN2` in `src/mods/Schemas.lua` is the authoritative table, and
 `tests/engine/gate_gen2_mod_api.lua` holds it to the catalog.
@@ -799,14 +798,7 @@ change in the Gen 2 module first and a routing row second:
 - `link_fields`: gated until the Gen 2 mon wire format carries mod fields;
   Gen 2 link battles exist (launcher arenas over `src/link/LinkBattle2.lua`)
   but ship no extra mon fields yet.
-- `map_scripts`: `data.gen2Scripts` is the cart's bytecode pool keyed by ROM
-  pointer, and a Lua row list merged into it is not something
-  `src/script/gen2/Vm.lua` can run. Routing it needs a Gen 2 side dispatcher in
-  `World`, not just the verb table `mod.commands` already has. The
-  `script.started` / `script.ended` / `script.command` seams do fire, so a mod
-  observes and can veto a script it cannot yet author whole.
-
-Four of this list closed after it was written, and how they closed is the
+Five of this list closed after it was written, and how they closed is the
 pattern for the rest:
 
 - **`growth_rates`** now routes to the SHARED Gen 1 target. Gold's curves are
@@ -836,6 +828,11 @@ pattern for the rest:
   `drawWorld` half is still inert, which is why this one is worth reading the
   caveat above for -- it is routed on the strength of the half that works, and
   Gold retires a drawWorld-only level rather than pretending.
+- **`map_scripts`** routes to `data.gen2Scripts` with record semantics, the
+  Gen 3 way. Gold's scripts are already decoded rows keyed by ROM pointer
+  (`"55:4e2e"`), and `src/script/gen2/Vm.lua` runs any row list in that pool,
+  so a registered id is a row list and `override` replaces a cart script
+  outright. A `movement:<key>` id writes `gen2Scripts.movements[key]`.
 
 ## Hooks and events Gold does not raise yet
 

@@ -655,10 +655,17 @@ mod.content.map_scripts:register("PALLET_TOWN", { talk = { ... } })
 
 ### On Gold (Gen 2)
 
-No Gen 2 home: Gold reimplements this system without reading the
-registry, so a write here is dropped and reported on a Gold boot.
-`docs/mod-api-gen2-compat.md` in the engine repo lists what is left
-to do for each one.
+- semantics: `record`
+- target: `Data.gen2Scripts`
+
+The record differs; the registry name, the verbs and the id space
+do not.
+- value: list of any value
+
+<!-- snippet: illustrative -->
+```lua
+mod.content.map_scripts:register("MYMOD_TALK", { { op = "jumptextfaceplayer", text = "MYMOD_HELLO" } })
+```
 
 ## map_songs
 
@@ -941,7 +948,7 @@ do not.
 | `catchRate` | integer 0..255 | yes |
 | `cry` | cries id | no |
 | `dex` | integer >= 1 | yes |
-| `dexEntry` | {heightM?, kind?, text?, text2?, weightKg?} | no |
+| `dexEntry` | {height?, heightM?, kind?, text?, text2?, weight?, weightKg?} | no |
 | `eggGroups` | list of string | no |
 | `eggGroupsRaw` | integer 0..255 | no |
 | `eggMoves` | list of moves id | no |

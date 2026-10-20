@@ -264,7 +264,7 @@ local function writeback(session, battleParty, remap, result, save, opts)
   if opts.scriptedLoss then return end
 
   -- pret CB2_EndTrainerBattle EARLY_RIVAL + RIVAL_BATTLE_HEAL_AFTER:
-  -- heal and continue script — no white-out warp.
+  -- heal and continue script: no white-out warp.
   local flags = tonumber(opts.rivalFlags) or 0
   local healAfter = opts.noWhiteout
     or (opts.earlyRival and (flags % 2 == 1)) -- bit0 = RIVAL_BATTLE_HEAL_AFTER
@@ -332,7 +332,7 @@ end
 BattleBridge.EXTRA_KINDS = {
   "twoOpponents", "partner", "recordedLink", "frontier", "trainerHill", "kyogreGroudon", "regi",
   "groudon", "kyogre", "rayquaza", "trainerIdB",
-  "tutorialKind", "playerHalf", "partnerTrainerId", "partnerBackPic", "trainerItems",
+  "tutorialKind", "playerHalf", "partnerTrainerId", "partnerBackPic", "frontierPartner", "trainerItems",
   "battleTower", "secretBase", "dome", "palace", "arena", "factory", "pike", "pyramid", "frontierTrainer", "frontierTrainerB",
   "towerLinkMulti", "victoryTextB", "specialBattleKind",
 }

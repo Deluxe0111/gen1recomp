@@ -83,6 +83,9 @@ end
 
 function StartMenu.update()
   tick_prompt()
+  -- pokefirered/src/overworld.c:1470
+  local TilesetAnim = package.loaded["src.core.game3.tileset_anim"]
+  if TilesetAnim and TilesetAnim.step then TilesetAnim.step() end
 end
 
 local function player_label(session)

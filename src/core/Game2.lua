@@ -1090,7 +1090,7 @@ function Game2:load(opts)
   self.data.pokemon = loadGenerated("data/generated/pokemon.lua") or {}
   self.data.items = loadGenerated("data/generated/items.lua") or {}
   self.data.moves = loadGenerated("data/generated/moves.lua") or {}
-  self.data.type_chart = loadGenerated("data/generated/type_chart.lua") or {}
+  self.data.type_chart = assert(loadGenerated("data/generated/type_chart.lua"))
   -- data/types/type_matchups.asm:112-116: the rows after the `db -2` marker
   -- apply by default; Foresight is what cuts the table short at it.
   local chart = self.data.type_chart

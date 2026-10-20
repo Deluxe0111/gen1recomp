@@ -623,15 +623,11 @@ Schemas.GEN2 = {
   -- table, so it keeps the shared data.commands target): the VM dispatches the
   -- Opcodes.MOD_COMMAND row -- an op name with no cart byte behind it --
   -- through that merged table, so mod.commands:register works on both games.
-  -- data.gen2Scripts is that bytecode pool keyed by ROM pointer, so
-  -- `map_scripts` has no home there: a Lua row list merged into it is not
-  -- something the VM can run.  (`tokens` used to sit on this line and does
-  -- not belong there -- TextBox.new runs TextBox.substitute on EVERY box in
-  -- both generations and substitute reads game.data.tokens, so the shared
-  -- target was already live on Gold.  It keeps that target, absent from this
-  -- table, and src/core/Game2.lua seeds data.tokens with a copy of
-  -- TextBox.TOKENS so the merge cannot mutate the module table.)
-  map_scripts = false,
+  -- (`tokens` keeps the shared target, absent from this table: TextBox.new
+  -- runs TextBox.substitute on EVERY box in both generations and substitute
+  -- reads game.data.tokens, and src/core/Game2.lua seeds data.tokens with a
+  -- copy of TextBox.TOKENS so the merge cannot mutate the module table.)
+  map_scripts = "gen2Scripts",
   -- Everything not listed keeps its Gen 1 target and works on Gold today:
   -- pokemon, moves, items, type_chart, audio + music/sfx/cries/map_songs,
   -- screens (the Gen2* ids in src/ui/Screens.lua), strings, font and commands.
@@ -2425,6 +2421,14 @@ local scriptEntry = f.union{
   leaf("suppress", "false", function(v) return v == false end),
 }
 
+local GEN2_MOVEMENT_PREFIX = "movement:"
+local GEN2_SCRIPT_META = { movements = true, generation = true }
+
+local function gen2MovementKey(id)
+  local key = type(id) == "string" and id:match("^movement:(.+)$")
+  return key or nil
+end
+
 R.map_scripts = {
   semantics = "compose", target = "map_scripts",
   value = f.rec{
@@ -2444,6 +2448,37 @@ R.map_scripts = {
   gen3Value = f.list(f.any),
   gen3Example = 'mod.content.map_scripts:override("EventScript_BufferItemsPocket", '
     .. '{ { op = "return" } })',
+  gen2Semantics = "record",
+  gen2Value = f.list(f.any),
+  gen2ReservedIds = GEN2_SCRIPT_META,
+  gen2BaseAt = function(base, id)
+    local key = gen2MovementKey(id)
+    if key then return base.movements and base.movements[key] or nil end
+    return base[id]
+  end,
+  gen2BaseIds = function(base)
+    local ids = {}
+    for id in pairs(base) do
+      if not GEN2_SCRIPT_META[id] then ids[#ids + 1] = id end
+    end
+    for key in pairs(base.movements or {}) do
+      ids[#ids + 1] = GEN2_MOVEMENT_PREFIX .. key
+    end
+    return ids
+  end,
+  gen2Write = function(target, registry)
+    for _, id in ipairs(registry.order) do
+      local key = gen2MovementKey(id)
+      if key then
+        target.movements = target.movements or {}
+        target.movements[key] = registry:get(id)
+      else
+        target[id] = registry:get(id)
+      end
+    end
+  end,
+  gen2Example = 'mod.content.map_scripts:register("MYMOD_TALK", '
+    .. '{ { op = "jumptextfaceplayer", text = "MYMOD_HELLO" } })',
 }
 
 R.screens = {
