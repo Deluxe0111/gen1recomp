@@ -228,7 +228,7 @@ local function fixture(generation)
     f.npc = require("src.core.game3.object_prepare").instance(objDef, { mapId = home })
     install("src.core.game3.objects", { _byId = { [1] = f.npc }, _order = { 1 } })
   elseif generation == 2 then
-    f.npc = require("src.world.gen2.NPC").new(home, objDef, data.sprites[objDef.sprite])
+    f.npc = require("src.world.gen2.Npc").new(home, objDef, data.sprites[objDef.sprite])
     ow.game = game
     function ow:applySpritePalette(npc) f.paletteNpc = npc end
     ow.npcs = { f.npc }
