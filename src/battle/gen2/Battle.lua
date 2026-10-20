@@ -5096,6 +5096,83 @@ end
 --   { kind = "item", item = <id>, target = n }  (handled by the caller, which
 --       applies the effect and then calls this with kind = "item" so the enemy
 --       still gets its turn)
+local function publicScalar(value)
+  local kind = type(value)
+  if kind == "string" or kind == "boolean" then return value, true end
+  if kind == "number" and value == value
+      and value < math.huge and value > -math.huge then
+    return value, true
+  end
+  return nil, false
+end
+
+local function publicDataCopy(value, visiting)
+  local scalar, ok = publicScalar(value)
+  if ok then return scalar, true end
+  if type(value) ~= "table" then return nil, false end
+
+  visiting = visiting or {}
+  if visiting[value] then return nil, false end
+  visiting[value] = true
+
+  local copy = {}
+  for key, child in next, value do
+    local copiedKey, keyOk = publicScalar(key)
+    local copiedChild, childOk = publicDataCopy(child, visiting)
+    if keyOk and childOk then copy[copiedKey] = copiedChild end
+  end
+  visiting[value] = nil
+  return copy, true
+end
+
+local function fieldBattlerView(battle, mon, side)
+  local def = battle:speciesDef(mon)
+  return publicDataCopy({
+    side = side,
+    name = battle:monName(mon),
+    hp = tonumber(mon.hp) or 0,
+    maxHp = tonumber(mon.maxHp) or tonumber(mon.stats and mon.stats.hp)
+      or tonumber(mon.hp) or 0,
+    types = (def and def.types) or mon.types or {},
+    vanished = mon.volatile and mon.volatile.vanished and true or false,
+  })
+end
+
+function Battle:applyFieldResiduals()
+  if self.over or not Runtime.wantsHook("battle.field_residual") then return end
+  local field = self.field or {}
+  local rows = Runtime.call("battle.field_residual", function() return {} end, {
+    field = publicDataCopy({ weather = self.weather, tokens = field.tokens or {} }),
+    battlers = {
+      player = fieldBattlerView(self, self.player, "player"),
+      enemy = fieldBattlerView(self, self.enemy, "enemy"),
+    },
+    turn = self.turn or 0,
+  })
+  if type(rows) ~= "table" then return end
+
+  local fainted = false
+  for _, row in ipairs(rows) do
+    local mon = type(row) == "table" and row.side == "player"
+      and self.player or type(row) == "table" and row.side == "enemy"
+      and self.enemy or nil
+    local amount = type(row) == "table" and row.amount or nil
+    if mon and (mon.hp or 0) > 0 and type(amount) == "number"
+        and amount > 0 and amount < math.huge and amount == math.floor(amount)
+        and (row.message == nil or type(row.message) == "string") then
+      amount = math.min(amount, mon.hp)
+      if type(row.message) == "string" and row.message ~= "" then
+        self:emit({ kind = "message", text = row.message })
+      end
+      mon.hp = mon.hp - amount
+      self:emit({ kind = "damage", side = self:sideOf(mon), amount = amount,
+        hp = mon.hp, anim = false })
+      if mon.hp <= 0 then fainted = true end
+    end
+  end
+  if fainted then self:resolveFaints(true) end
+end
+
 local function runTurn(self, action, enemyAction)
   if self.over then return self:takeEvents() end
   self.turn = self.turn + 1
@@ -5395,6 +5472,7 @@ local function runTurn(self, action, enemyAction)
   end
 
   self:betweenTurnEffects()
+  self:applyFieldResiduals()
   return self:takeEvents()
 end
 

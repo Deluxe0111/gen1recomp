@@ -20,7 +20,8 @@ somebody else's existing mod behave differently?** If yes, it is Lane B.
 python3 tools/modkit.py scaffold my_mod --profile content
 ```
 
-`--profile` is one of `content`, `overhaul`, `total_conversion`. The
+`--profile` is one of `content`, `overhaul`, `total_conversion`; `--api`
+(1, 2 or 3, default 2) is written into the manifest as given. The
 scaffold refuses to overwrite an existing directory, and prints the next
 commands.
 
@@ -213,10 +214,11 @@ own index (413 and up past A) and `letter` as 1 (A) to 28 (`?`), with the path
 pointing at that letter's art.
 
 `docs/mod-api-gen2-compat.md` is the compatibility matrix: what works on Gold,
-Silver and Crystal today (42 of the 47 registries, 40 event and 44 hook names
-shared with Gen 1, and 24 Gen 2-only ones), which registries have no Gen 2 home
+Silver and Crystal today (44 of the 47 registries, 43 event and 60 hook names
+shared with Gen 1, and 25 Gen 2-only ones), which registries have no Gen 2 home
 and drop their writes with a report, and which hooks and events are still to
-come.
+come. `docs/mod-api-gen3-compat.md` is the same matrix for FireRed, LeafGreen,
+Ruby, Sapphire and Emerald.
 `docs/preparing-your-mod-for-gen2.md` is the step-by-step migration guide for a
 Gen 1 mod, and it is the one to start from.
 
@@ -672,10 +674,14 @@ Three version numbers coexist.
 the mod-facing schemas or API; minor = new backward-compatible seams;
 patch = bugfix.
 
-**Mod API version** -- the integer `modApi`, currently `2`. Bumped only on a
+**Mod API version** -- the integer `modApi`, currently `3`. Bumped only on a
 breaking change to the `mod` object surface. A manifest's `api` field pins
-the surface the mod was written against, so an api-2 mod keeps working when
-the engine ships api 3.
+the surface the mod was written against, so api 1 and api 2 mods keep
+working unchanged. Api 3 is the portable cross-generation surface: one entry
+file, Gen 1 names and shapes as the contract, and a capability query
+(`mod:supports`); `tools/modkit.py scaffold --api 3` writes an api 3 manifest. It is documented in
+[Portable API 3](docs/modding.md#portable-api-3), with
+`mods/examples/portable_api` as the runnable example.
 
 **Your mod's version** -- the manifest `version`, semver:
 
