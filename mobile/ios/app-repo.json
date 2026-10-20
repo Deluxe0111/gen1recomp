@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.93",
+          "date": "2026-10-20",
+          "size": 44712138,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.93/gen1recomp++-0.3.93-ios.ipa",
+          "localizedDescription": "major mod api update\r\n\r\nCo-authored-by: Nexhas28 <45065431+Nexhas28@users.noreply.github.com>\n\n## Contributors\n\n- @bryanthaboi\n- @Nexhas28"
+        },
+        {
           "version": "0.3.92",
           "date": "2026-10-20",
           "size": 44589605,
