@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.95",
+          "date": "2026-10-21",
+          "size": 44713427,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.95/gen1recomp++-0.3.95-ios.ipa",
+          "localizedDescription": "Mod Mon index cap 🧢\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.94",
           "date": "2026-10-21",
           "size": 44708049,
