@@ -3756,9 +3756,19 @@ local function start_post_catch_flow(catchRes)
 
   local function prompt_nickname()
     Battle._phase = "catch_nickname_prompt"
-    -- pokefirered/src/battle_message.c:477
-    Ui.askYesNo(BattleText.get("STRINGID_GIVENICKNAMECAPTURED", { opponentMon1 = ename }), function(yes)
+    -- Ask the native mod hook at the point that owns the catch outcome.
+    -- A mandatory-nickname challenge skips the optional YES/NO question
+    -- rather than relying on another mod replacing Ui.askYesNo.
+    -- The hook is consulted only for ordinary player catches (scripted
+    -- tutorials/headless captures have already exited above).
+    local required = ModRuntime.wantsHook("battle.catch.nickname_required")
+      and ModRuntime.call("battle.catch.nickname_required", function() return false end, {
+        battle = caughtState, mon = mon, speciesId = sp, catch = catchRes,
+        source = "gen3",
+      }) == true
+    local function onNicknameDecision(yes)
       if not Battle._active or Battle._st ~= caughtState or Battle._phase ~= "catch_nickname_prompt" then return end
+      if required then yes = true end
       if yes then
         local okN, Naming = pcall(require, "src.ui.game3.naming")
         if okN and Naming and Naming.open then
@@ -3788,9 +3798,22 @@ local function start_post_catch_flow(catchRes)
           })
           return
         end
+        if required then
+          -- Never silently finish a mandatory-name capture unnamed if
+          -- the native naming UI is unavailable.
+          Ui.push("Nickname required: naming screen unavailable.")
+          return
+        end
       end
       finish_catch_flow(catchRes, ename)
-    end)
+    end
+    if required then
+      onNicknameDecision(true)
+    else
+      -- pokefirered/src/battle_message.c:477
+      Ui.askYesNo(BattleText.get("STRINGID_GIVENICKNAMECAPTURED", { opponentMon1 = ename }),
+        onNicknameDecision)
+    end
   end
 
   if catchRes and catchRes.firstTimeCaught and sp and BattleProfile.of(Battle._st).family == "rse" then
