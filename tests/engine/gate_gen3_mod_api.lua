@@ -189,7 +189,8 @@ local GEN3_HOOKS = {
   "battle.damage", "battle.crit", "battle.accuracy", "battle.charge_required",
   "battle.run", "battle.turn_order", "battle.enemy_action",
   "battle.low_health_alarm",
-  "battle.bottom_ui_visible", "battle.catch_exp", "battle.caught_marker_visible",
+  "battle.bottom_ui_visible", "battle.catch_exp",
+  "battle.catch.nickname_required", "battle.caught_marker_visible",
   "battle.enemy_switch_or_item", "battle.exp_award", "battle.field_residual", "battle.menu_auxiliary",
   "battle.move_grid_navigation", "battle.status_hud_visible",
   "breeding.compatibility", "core.logic_speed", "encounter.fishing",
@@ -198,6 +199,10 @@ local GEN3_HOOKS = {
   "ui.list_menu", "ui.naming.grid", "ui.options.rows", "ui.party.grid_navigation",
   "ui.party.submenu",
 }
+
+-- A narrow Gen 3-only extension used at the native catch naming decision.
+-- Unlike the shared hooks above, Gen 1/2 have separate naming pipelines.
+local GEN3_ONLY_HOOKS = { ["battle.catch.nickname_required"] = true }
 
 local function assertShared(name, sites, kind)
   local gen3, other = 0, 0
@@ -214,7 +219,16 @@ for _, name in ipairs(GEN3_EVENTS) do
   assertShared(name, Catalog.eventSites(name), "event")
 end
 for _, name in ipairs(GEN3_HOOKS) do
-  assertShared(name, Catalog.hookSites(name), "hook")
+  local sites = Catalog.hookSites(name)
+  if GEN3_ONLY_HOOKS[name] then
+    local found = false
+    for _, path in ipairs(sites) do
+      if isGen3Site(path) then found = true end
+    end
+    T.check(found, "Gen3-only hook has native site: " .. name)
+  else
+    assertShared(name, sites, "hook")
+  end
 end
 
 local function assertListed(names, catalogNames, sites, kind)
@@ -227,9 +241,10 @@ local function assertListed(names, catalogNames, sites, kind)
         if isGen3Site(path) then gen3 = true else other = true end
       end
       if gen3 then
-        T.check(other,
-          ("%s %s is raised only from Gen 3 modules; Gen 3 reuses the "
-            .. "Gen 1 / Gen 2 names and invents none"):format(kind, name))
+        T.check(other or (kind == "hook" and GEN3_ONLY_HOOKS[name]),
+          ("%s %s is raised only from Gen 3 modules; all other Gen 3 "
+            .. "hooks and events must reuse Gen 1 / Gen 2 names")
+            :format(kind, name))
         T.check(listed[name],
           ("%s %s has a Gen 3 site but is not in this gate's list; add it "
             .. "here and to docs/mod-api-gen3-compat.md"):format(kind, name))
