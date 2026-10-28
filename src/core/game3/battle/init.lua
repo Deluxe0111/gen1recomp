@@ -3774,7 +3774,8 @@ local function start_post_catch_flow(catchRes)
         if okN and Naming and Naming.open then
           Ui.clearCaughtDexScene()
           Battle._phase = "catch_naming"
-          local nameOptions = {
+          local nameOptions
+          nameOptions = {
             template = "CAUGHT_MON",
             maxLen = 10,
             species = sp,
