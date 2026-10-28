@@ -3774,7 +3774,7 @@ local function start_post_catch_flow(catchRes)
         if okN and Naming and Naming.open then
           Ui.clearCaughtDexScene()
           Battle._phase = "catch_naming"
-          Naming.open({
+          local nameOptions = {
             template = "CAUGHT_MON",
             maxLen = 10,
             species = sp,
@@ -3789,13 +3789,24 @@ local function start_post_catch_flow(catchRes)
             title = Naming.monTitle(Pokemon.name(sp)),
             onDone = function(nick)
               if not Battle._active or Battle._st ~= caughtState or Battle._phase ~= "catch_naming" then return end
-              if nick and nick ~= "" and nick ~= ename then
+              local trimmed = type(nick) == "string"
+                and nick:gsub("^%s+", ""):gsub("%s+$", "") or ""
+              local upper = trimmed:upper()
+              if required and (trimmed == "" or upper == "EGG"
+                  or upper == tostring(Pokemon.name(sp) or ""):upper()) then
+                -- Native naming screens may return the species seed on an
+                -- empty submission; never finish a mandatory-name capture.
+                Naming.open(nameOptions)
+                return
+              end
+              if trimmed ~= "" and nick ~= ename then
                 if mon then mon.nickname = nick end
               end
               -- pokefirered/src/battle_script_commands.c:9853
               finish_catch_flow(catchRes, ename, true)
             end,
-          })
+          }
+          Naming.open(nameOptions)
           return
         end
         if required then
