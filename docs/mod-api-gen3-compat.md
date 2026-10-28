@@ -1,8 +1,11 @@
 # Mods and Gen 3 (FireRed, LeafGreen, Ruby, Sapphire, Emerald)
 
 The mod API is one API across all three generations. Hook names, event names
-and registry names are shared: Gen 3 reuses the Gen 1 / Gen 2 names and
-invents none. A name has no `gen3.` prefix, and a name is only listed here when
+and registry names are shared by default: Gen 3 generally reuses the
+Gen 1 / Gen 2 names. The deliberately narrow exception
+`battle.catch.nickname_required` is Gen 3-specific because the older
+generations use different naming flows. A name has no `gen3.` prefix,
+and a name is only listed here when
 it has a native call site in the Gen 3 code (`src/core/game3`,
 `src/core/Game3.lua`, `src/link/Game3Link.lua`, `src/ui/game3`) as well as in
 the other generations.
@@ -74,7 +77,7 @@ native Gen 3 call site.
 - *Battle:* `battle.damage`, `battle.crit`, `battle.accuracy`,
   `battle.charge_required`, `battle.turn_order`, `battle.enemy_action`,
   `battle.run`, `battle.enemy_switch_or_item`, `battle.exp_award`,
-  `battle.catch_exp`,
+  `battle.catch_exp`, `battle.catch.nickname_required`,
   `battle.low_health_alarm`, `battle.field_residual`,
   `battle.menu_auxiliary`, `battle.caught_marker_visible`,
   `battle.bottom_ui_visible`, `battle.status_hud_visible`,
@@ -85,6 +88,14 @@ native Gen 3 call site.
   keep authority over HP, replacements and battle end.
   `battle.menu_auxiliary` is raised from the main battle menu
   (`src/core/game3/battle/init.lua`) and a truthy return claims the press.
+  `battle.catch.nickname_required` is consulted **immediately before the
+  native caught-Pokémon nickname YES/NO prompt**. A mod that returns exactly
+  `true` from this hook forces the native naming screen and prevents
+  completing a capture without a custom name. The context includes
+  `{source="gen3", battle, mon, speciesId, catch}` where `catch.location`
+  can be `"pc"`. The hook is not called for headless or scripted tutorial
+  capture bypasses. With no registered mod or a false result, native optional
+  YES/NO behaviour is unchanged. This is currently a Gen 3-only hook.
 - *Trainers:* `trainer.before_battle`
   (`src/core/game3/battle_bridge.lua`) receives the game, a context table and a
   `continueBattle` function; a truthy return defers the battle until a mod
