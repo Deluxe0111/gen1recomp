@@ -59,6 +59,27 @@ native Gen 3 call site.
   - `pokemon.received` carries `{ mon, from, peerName }` and
     `trade.completed` carries `{ sent, received, evolveTo }`.
 
+## Temporary battle-form hooks (Gen 3 only)
+
+These opt-in seams do not replace the existing Pokémon sprite hooks or edit
+saved Pokémon records. Their default implementations preserve vanilla behavior.
+
+- `battle.move_menu_input(next, battle, battler, input)`: called before
+  single/double move-menu input is consumed. Return `true` only for an input
+  edge the mod has handled; otherwise call `next(battle, battler, input)`.
+- `battle.move_command(next, battle, battler, action)`: called as a selected
+  command is taken from the UI, after target selection in doubles. Returns a
+  normal action table, optionally decorated with mod-specific metadata.
+- `battle.before_move(next, battle, plannedAction, battler)`: called after
+  turn order is fixed, immediately before executing an action in singles and
+  doubles. The wrapper must call `next`; no additional turn is granted.
+- `battle.stat_value(next, battler, statName, value)`: returns an optional
+  numeric, pre-stage attack/defense/spAtk/spDef/speed override for the current
+  battler only; defaults to the supplied stat.
+- `battle.battler_picture(next, battler, back, shiny, currentEntry)`: returns
+  an optional battle-only picture entry, applied after normal/G9 sprite lookup.
+  Return the existing entry when no temporary form is active.
+
 ## Hooks
 
 - *Overworld:* `warp.destination`, `movement.collision`, `movement.speed`,
