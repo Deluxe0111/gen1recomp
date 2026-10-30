@@ -201,6 +201,19 @@ function Damage.base(attacker, defender, move, opts)
     defense, spDefense = t.defense or defense, t.spDef or spDefense
   end
 
+  -- Scoped pre-stage battle stats: lets temporary forms exist without writing
+  -- changes into the Pokémon's permanent party/save record.
+  if ModRuntime.wantsHook("battle.stat_value") then
+    local function adjusted(b, key, base)
+      return tonumber(ModRuntime.call("battle.stat_value",
+        function(_, _, value) return value end, b, key, base)) or base
+    end
+    attack = adjusted(attacker, "attack", attack)
+    defense = adjusted(defender, "defense", defense)
+    spAttack = adjusted(attacker, "spAtk", spAttack)
+    spDefense = adjusted(defender, "spDef", spDefense)
+  end
+
   local aAb = ability_of(attacker, adapter)
   local dAb = ability_of(defender, adapter)
   if aAb == "HUGE_POWER" or aAb == "PURE_POWER" then attack = attack * 2 end
