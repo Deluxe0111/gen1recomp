@@ -199,6 +199,14 @@ local GEN3_HOOKS = {
   "ui.party.submenu",
 }
 
+-- The five explicitly documented battle-only seams are intentionally native
+-- to Gen 3. Other API names retain strict cross-generation parity.
+local GEN3_ONLY_HOOKS = {
+  ["battle.move_menu_input"] = true, ["battle.move_command"] = true,
+  ["battle.before_move"] = true, ["battle.battler_picture"] = true,
+  ["battle.stat_value"] = true,
+}
+
 local function assertShared(name, sites, kind)
   local gen3, other = 0, 0
   for _, path in ipairs(sites) do
@@ -227,15 +235,23 @@ local function assertListed(names, catalogNames, sites, kind)
         if isGen3Site(path) then gen3 = true else other = true end
       end
       if gen3 then
-        T.check(other,
-          ("%s %s is raised only from Gen 3 modules; Gen 3 reuses the "
-            .. "Gen 1 / Gen 2 names and invents none"):format(kind, name))
-        T.check(listed[name],
+        T.check(other or (kind == "hook" and GEN3_ONLY_HOOKS[name]),
+          ("%s %s has no shared site or explicit Gen 3-only exemption")
+            :format(kind, name))
+        T.check(listed[name] or (kind == "hook" and GEN3_ONLY_HOOKS[name]),
           ("%s %s has a Gen 3 site but is not in this gate's list; add it "
             .. "here and to docs/mod-api-gen3-compat.md"):format(kind, name))
       end
     end
   end
+end
+
+for name in pairs(GEN3_ONLY_HOOKS) do
+  local gen3, other = false, false
+  for _, site in ipairs(Catalog.hookSites(name)) do
+    if isGen3Site(site) then gen3 = true else other = true end
+  end
+  T.check(gen3 and not other, "temporary-form hook is scoped to Gen 3: " .. name)
 end
 
 assertListed(GEN3_EVENTS, Catalog.events(), Catalog.eventSites, "event")
