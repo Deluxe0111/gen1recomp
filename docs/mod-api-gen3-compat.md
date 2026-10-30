@@ -2,8 +2,9 @@
 
 The mod API is one API across all three generations. Hook names, event names
 and registry names are shared: Gen 3 reuses the Gen 1 / Gen 2 names and
-invents none. A name has no `gen3.` prefix, and a name is only listed here when
-it has a native call site in the Gen 3 code (`src/core/game3`,
+normally invents none. The five battle-only temporary-form seams documented
+below are the explicit Gen 3 exception. A name has no `gen3.` prefix, and a
+name is only listed here when it has a native call site in the Gen 3 code (`src/core/game3`,
 `src/core/Game3.lua`, `src/link/Game3Link.lua`, `src/ui/game3`) as well as in
 the other generations.
 
