@@ -911,6 +911,11 @@ end
 function Ui.takeCommand()
   local c = Ui._pendingCommand
   Ui._pendingCommand = nil
+  if c and ModRuntime.wantsHook("battle.move_command") then
+    local b = State.battler(Ui._st, Ui._active or 0)
+    c = ModRuntime.call("battle.move_command", function(_, _, action) return action end,
+      Ui._st, b, c) or c
+  end
   if c then
     -- pokefirered/src/battle_controller_player.c:2809
     Ui._bounce = { hb = {}, mon = {} }
@@ -1828,6 +1833,14 @@ function Ui.handleInput(input)
     return true
   end
   if Ui._wally then return true end
+  -- Opt-in per-move-menu input, before vanilla single/double dispatch.
+  -- A mod returns true only when it actually consumes an input edge.
+  if Ui._mode == "moves" and not Ui._swap
+      and ModRuntime.wantsHook("battle.move_menu_input") then
+    local b = State.battler(Ui._st, Ui._active or 0)
+    if ModRuntime.call("battle.move_menu_input", function() return false end,
+        Ui._st, b, input) == true then return true end
+  end
   if is_double() then return handle_double_input(input) end
   if Ui._mode == "menu" then
     local idx, moved = grid_nav(Ui._menuIndex, input, 4)
@@ -2244,6 +2257,14 @@ local function draw_mon_sprite(battler, base, back, id)
   if not back and not ghost and not dollImg and pres and (tonumber(pres.monFrame) or 0) ~= 0 then
     -- pokeemerald/src/sprite.c:917
     entry = require("src.core.game3.mon_anim").framePic(picSp, pres.monFrame, shiny) or entry
+  end
+  -- A battle-specific picture override; the vanilla/G9 entry remains the
+  -- fallback and Pokemon.frontPic/backPic ownership is never touched.
+  if not ghost and not dollImg and not tf
+      and ModRuntime.wantsHook("battle.battler_picture") then
+    entry = ModRuntime.call("battle.battler_picture",
+      function(_, _, _, current) return current end,
+      battler, back, shiny, entry) or entry
   end
   if entry and entry.image then
     local a = (pres and pres.alpha) or 1
