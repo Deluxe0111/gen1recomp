@@ -67,6 +67,11 @@ names("hooks", 1, [[
   battle.field_residual pokemon.level_visible
 ]])
 names("hooks", 1, "battle.style catch.nickname catch.party_full transition.style")
+-- Generation 3-only extension points for temporary per-battler battle forms.
+names("hooks", 1, [[
+  battle.move_menu_input battle.move_command battle.before_move
+  battle.battler_picture battle.stat_value
+]])
 names("hooks", 2, [[
   shiny.roll gender.roll held_item.trigger breeding.compatibility phone.contact_list
   battle.enemy_switch_or_item
@@ -168,6 +173,10 @@ sites("hooks", "13", [[
 sites("hooks", "23", [[
   battle.enemy_switch_or_item breeding.compatibility gender.roll
   held_item.trigger shiny.roll
+]])
+sites("hooks", "3", [[
+  battle.move_menu_input battle.move_command battle.before_move
+  battle.battler_picture battle.stat_value
 ]])
 sites("hooks", "1", [[
   battle.style catch.nickname catch.party_full
