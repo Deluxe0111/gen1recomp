@@ -2738,6 +2738,9 @@ local function step_action()
   local out = {}
   st.interactiveChoices = st.link or not (Battle._headless or Battle._auto)
   st.pdActor = (type(act.user) == "table" and act.user.side) or act.user
+  if act.kind == "move" and ModRuntime.wantsHook("battle.before_move") then
+    ModRuntime.call("battle.before_move", function() end, st, act, uBattler)
+  end
   if st.facility and st.facility.resolveMove then
     -- pokeemerald/src/battle_util.c:263
     st.facility:resolveMove(st, ad, act, out, act.user, act.target)
@@ -3232,6 +3235,9 @@ function D.stepAction()
     if not user or State.isFainted(user) then return D.afterEach() end
     local out = {}
     st.interactiveChoices = st.link or not (Battle._headless or Battle._auto)
+    if ModRuntime.wantsHook("battle.before_move") then
+      ModRuntime.call("battle.before_move", function() end, st, act, user)
+    end
     if st.facility and st.facility.resolveMove then
       -- pokeemerald/src/battle_util.c:263
       st.facility:resolveMove(st, ad, act, out, act.battler, act.target)
