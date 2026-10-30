@@ -577,6 +577,14 @@ local function boundary(loader, name, fishing)
   end
 
   local function roles()
+    -- These engine-facing callbacks intentionally receive native references.
+    -- A copied battler/action would break same-turn identity matching.
+    if name == "battle.move_menu_input" then return { false, false, false } end
+    if name == "battle.move_command" or name == "battle.before_move" then
+      return { false, false, false }
+    end
+    if name == "battle.battler_picture" then return { false, false, false, false } end
+    if name == "battle.stat_value" then return { false, false, false } end
     if name == "battle.exp_award" then return { "exp_award" } end
     if name == "battle.turn_order" then return { "battler", "move", "battler", "move", "context" } end
     if name == "catch.rate" then return { "itemId", "mon", "species", "context" } end
