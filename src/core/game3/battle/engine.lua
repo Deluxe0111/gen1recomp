@@ -207,6 +207,10 @@ local function speed_of(battler, st, adapter)
   if battler and battler.expTransform and battler.expTransform.speed then
     spe = battler.expTransform.speed
   end
+  if ModRuntime.wantsHook("battle.stat_value") then
+    spe = tonumber(ModRuntime.call("battle.stat_value",
+      function(_, _, value) return value end, battler, "speed", spe)) or spe
+  end
   local weather = adapter and Rules.weather.effective(st, adapter) or Rules.weather.kind(st and st.weather)
   local ab = adapter and adapter:abilityOf(battler)
   local mul = 1
